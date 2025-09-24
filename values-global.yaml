@@ -1,6 +1,6 @@
 ---
 global:
-  pattern: virtualization-starter-kit
+  pattern: ramendr-starter-kit
 
   options:
     useCSV: false

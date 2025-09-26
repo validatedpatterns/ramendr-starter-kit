@@ -9,6 +9,7 @@ clusterGroup:
     - regional-dr-trigger
     - openshift-dr-system
     - openshift-storage
+    - policies
   subscriptions:
     acm:
       name: advanced-cluster-management

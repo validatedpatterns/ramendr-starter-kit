@@ -3,6 +3,7 @@ clusterGroup:
   isHubCluster: true
   namespaces:
     - open-cluster-management
+    - open-cluster-management-observability
     - vault
     - golang-external-secrets
     - regional-dr
@@ -69,8 +70,16 @@ clusterGroup:
         automated: {}
         retry:
           limit: 20
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
         syncOptions:
-          - syncTimeout=600s
+          - syncTimeout=1800s
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground
+          - RespectIgnoreDifferences=true
+          - ServerSideApply=true
       ignoreDifferences:
       - group: operators.openshift.io
         kind: Console

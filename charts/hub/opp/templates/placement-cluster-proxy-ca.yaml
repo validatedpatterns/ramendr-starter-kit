@@ -1,0 +1,15 @@
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: PlacementRule
+metadata:
+  name: placement-cluster-proxy-ca
+  namespace: policies
+  labels:
+    open-cluster-management.io/policy-set: openshift-plus
+spec:
+  clusterConditions:
+  - type: ManagedClusterConditionAvailable
+    status: "True"
+  clusterSelector:
+    matchExpressions:
+    - key: cluster.open-cluster-management.io/clusterset
+      operator: Exists

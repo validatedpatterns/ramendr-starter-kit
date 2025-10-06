@@ -1,0 +1,68 @@
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: Policy
+metadata:
+  annotations:
+    policy.open-cluster-management.io/categories: CA Assessment Authorization and
+      Monitoring
+    policy.open-cluster-management.io/controls: CA-7 Continuous Monitoring
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/health-check-ignore: "true"
+    argocd.argoproj.io/hook: "Skip"
+  labels:
+    open-cluster-management.io/policy-set: openshift-plus
+  name: policy-cluster-proxy-ca-managed
+  namespace: policies
+spec:
+  disabled: false
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1beta1
+      kind: ConfigurationPolicy
+      metadata:
+        name: policy-cluster-proxy-ca-managed
+        annotations:
+          argocd.argoproj.io/compare-options: IgnoreExtraneous
+      spec:
+        object-templates:
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: cluster-proxy-ca-bundle
+              namespace: openshift-config
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-bundle
+                cluster.open-cluster-management.io/type: managed
+            data:
+              ca-bundle.crt: |
+                # This ConfigMap contains the combined CA certificates
+                # from all clusters in the multicluster environment
+                # to enable secure communication through proxies
+                #
+                # The CA bundle is automatically populated by the hub cluster
+                # and synchronized to all managed clusters via ACM policies
+                #
+                # This ensures that all clusters can communicate securely
+                # with each other through their respective proxies
+                #
+                # CA bundle content will be populated by the hub cluster
+                # and distributed to all managed clusters
+                -----BEGIN CERTIFICATE-----
+                # CA bundle content will be populated here by the hub cluster
+                # This is a placeholder that will be replaced with actual CA data
+                -----END CERTIFICATE-----
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: config.openshift.io/v1
+            kind: Proxy
+            metadata:
+              name: cluster
+            spec:
+              trustedCA:
+                name: cluster-proxy-ca-bundle
+        remediationAction: enforce
+        severity: high

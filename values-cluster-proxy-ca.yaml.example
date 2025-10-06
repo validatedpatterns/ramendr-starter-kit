@@ -1,0 +1,31 @@
+# Example values file for cluster proxy CA configuration
+# Copy this file and update with your actual CA certificates
+
+global:
+  # Hub cluster CA certificate
+  # Extract using: oc get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}"
+  hubClusterCA: |
+    -----BEGIN CERTIFICATE-----
+    # Replace with actual hub cluster CA certificate
+    -----END CERTIFICATE-----
+
+# Regional DR configuration with cluster CA certificates
+regionalDR:
+  - name: resilient
+    clusters:
+      primary:
+        name: ocp-primary
+        # Primary cluster CA certificate
+        # Extract using: oc --kubeconfig=<primary-kubeconfig> get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}"
+        clusterCA: |
+          -----BEGIN CERTIFICATE-----
+          # Replace with actual primary cluster CA certificate
+          -----END CERTIFICATE-----
+      secondary:
+        name: ocp-secondary
+        # Secondary cluster CA certificate
+        # Extract using: oc --kubeconfig=<secondary-kubeconfig> get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}"
+        clusterCA: |
+          -----BEGIN CERTIFICATE-----
+          # Replace with actual secondary cluster CA certificate
+          -----END CERTIFICATE-----

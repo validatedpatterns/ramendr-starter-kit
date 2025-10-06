@@ -1,0 +1,344 @@
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: Policy
+metadata:
+  annotations:
+    policy.open-cluster-management.io/categories: CA Assessment Authorization and
+      Monitoring
+    policy.open-cluster-management.io/controls: CA-7 Continuous Monitoring
+    policy.open-cluster-management.io/standards: NIST SP 800-53
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/health-check-ignore: "true"
+    argocd.argoproj.io/hook: "Skip"
+  labels:
+    open-cluster-management.io/policy-set: openshift-plus
+  name: policy-cluster-proxy-ca-acm
+  namespace: policies
+spec:
+  disabled: false
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1beta1
+      kind: ConfigurationPolicy
+      metadata:
+        name: policy-cluster-proxy-ca-acm
+        annotations:
+          argocd.argoproj.io/compare-options: IgnoreExtraneous
+      spec:
+        object-templates:
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: extract-cluster-cas-acm
+              namespace: openshift-config
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+            spec:
+              template:
+                spec:
+                  containers:
+                  - name: ca-extractor
+                    image: registry.redhat.io/openshift4/ose-cli:latest
+                    command:
+                    - /bin/bash
+                    - -c
+                    - |
+                      set -euo pipefail
+                      
+                      echo "Starting ACM-based CA certificate extraction..."
+                      
+                      # Create combined CA bundle
+                      CA_BUNDLE_FILE="/tmp/combined-ca-bundle.crt"
+                      touch "$CA_BUNDLE_FILE"
+                      
+                      # Extract hub cluster CA
+                      echo "Extracting hub cluster CA..."
+                      if oc get configmap -n openshift-config-managed trusted-ca-bundle -o jsonpath="{.data['ca-bundle\.crt']}" >> "$CA_BUNDLE_FILE" 2>/dev/null; then
+                        echo "Hub cluster CA extracted successfully"
+                      else
+                        echo "Warning: Could not extract hub cluster CA"
+                      fi
+                      
+                      # Function to extract CA from ManagedClusterInfo
+                      extract_ca_from_managedclusterinfo() {
+                        local cluster_name="$1"
+                        echo "Extracting CA from ManagedClusterInfo for $cluster_name"
+                        
+                        # Try to get CA from ManagedClusterInfo
+                        local ca_data
+                        ca_data=$(oc get managedclusterinfo -n "$cluster_name" -o jsonpath='{.items[0].spec.loggingCA}' 2>/dev/null || echo "")
+                        
+                        if [[ -n "$ca_data" && "$ca_data" != "null" ]]; then
+                          echo "$ca_data" >> "$CA_BUNDLE_FILE"
+                          echo "CA extracted from ManagedClusterInfo for $cluster_name"
+                          return 0
+                        else
+                          echo "No CA data found in ManagedClusterInfo for $cluster_name"
+                          return 1
+                        fi
+                      }
+                      
+                      # Function to extract CA from cluster secrets
+                      extract_ca_from_secrets() {
+                        local cluster_name="$1"
+                        echo "Attempting to extract CA from secrets for $cluster_name"
+                        
+                        # Look for cluster CA in various secret types
+                        local secret_found=false
+                        
+                        # Check for cluster CA secret
+                        if oc get secret -n "$cluster_name" -o jsonpath='{.items[?(@.metadata.name=="'$cluster_name'-import")].data.ca\.crt}' 2>/dev/null | base64 -d >> "$CA_BUNDLE_FILE" 2>/dev/null; then
+                          echo "CA extracted from import secret for $cluster_name"
+                          secret_found=true
+                        fi
+                        
+                        # Check for bootstrap secret
+                        if oc get secret -n "$cluster_name" -o jsonpath='{.items[?(@.metadata.name=="'$cluster_name'-bootstrap")].data.ca\.crt}' 2>/dev/null | base64 -d >> "$CA_BUNDLE_FILE" 2>/dev/null; then
+                          echo "CA extracted from bootstrap secret for $cluster_name"
+                          secret_found=true
+                        fi
+                        
+                        # Check for any TLS secret with CA
+                        if oc get secret -n "$cluster_name" -o jsonpath='{.items[?(@.type=="kubernetes.io/tls")].data.ca\.crt}' 2>/dev/null | base64 -d >> "$CA_BUNDLE_FILE" 2>/dev/null; then
+                          echo "CA extracted from TLS secret for $cluster_name"
+                          secret_found=true
+                        fi
+                        
+                        if [[ "$secret_found" == "true" ]]; then
+                          return 0
+                        else
+                          echo "No CA found in secrets for $cluster_name"
+                          return 1
+                        fi
+                      }
+                      
+                      # Get all managed clusters
+                      echo "Discovering managed clusters from ACM..."
+                      MANAGED_CLUSTERS=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+                      
+                      if [[ -n "$MANAGED_CLUSTERS" ]]; then
+                        echo "Found managed clusters: $MANAGED_CLUSTERS"
+                        
+                        # Process each managed cluster
+                        for cluster in $MANAGED_CLUSTERS; do
+                          echo "Processing managed cluster: $cluster"
+                          
+                          # Skip the local cluster if it's in the list
+                          if [[ "$cluster" == "local-cluster" ]]; then
+                            echo "Skipping local-cluster (hub)"
+                            continue
+                          fi
+                          
+                          # Try ManagedClusterInfo first (most reliable)
+                          if extract_ca_from_managedclusterinfo "$cluster"; then
+                            continue
+                          fi
+                          
+                          # Try secrets as fallback
+                          if extract_ca_from_secrets "$cluster"; then
+                            continue
+                          fi
+                          
+                          echo "Warning: Could not extract CA from $cluster using any method"
+                        done
+                      else
+                        echo "No managed clusters found"
+                      fi
+                      
+                      # Also check for specific regional DR clusters
+                      echo "Checking for regional DR clusters..."
+                      for cluster in ocp-primary ocp-secondary; do
+                        if oc get managedcluster "$cluster" >/dev/null 2>&1; then
+                          echo "Found regional DR cluster: $cluster"
+                          
+                          # Try ManagedClusterInfo first
+                          if extract_ca_from_managedclusterinfo "$cluster"; then
+                            continue
+                          fi
+                          
+                          # Try secrets as fallback
+                          if extract_ca_from_secrets "$cluster"; then
+                            continue
+                          fi
+                          
+                          echo "Warning: Could not extract CA from regional DR cluster $cluster"
+                        fi
+                      done
+                      
+                      # Remove duplicate certificates and clean up the bundle
+                      echo "Cleaning up CA bundle..."
+                      if [[ -s "$CA_BUNDLE_FILE" ]]; then
+                        # Remove empty lines and duplicates
+                        grep -v '^$' "$CA_BUNDLE_FILE" | sort | uniq > "${CA_BUNDLE_FILE}.tmp"
+                        mv "${CA_BUNDLE_FILE}.tmp" "$CA_BUNDLE_FILE"
+                        
+                        # Ensure proper certificate formatting
+                        sed -i '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/!d' "$CA_BUNDLE_FILE"
+                      fi
+                      
+                      # Create or update the ConfigMap
+                      echo "Creating/updating cluster-proxy-ca-bundle ConfigMap..."
+                      if [[ -s "$CA_BUNDLE_FILE" ]]; then
+                        oc create configmap cluster-proxy-ca-bundle \
+                          --from-file=ca-bundle.crt="$CA_BUNDLE_FILE" \
+                          -n openshift-config \
+                          --dry-run=client -o yaml | oc apply -f -
+                        
+                      # Update the proxy resource to use the ConfigMap
+                      echo "Updating cluster proxy to use the CA bundle..."
+                      oc patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"cluster-proxy-ca-bundle"}}}' || true
+                      
+                      # Distribute the CA bundle to all managed clusters
+                      echo "Distributing CA bundle to managed clusters..."
+                      
+                      # Get all managed clusters
+                      MANAGED_CLUSTERS=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+                      
+                      if [[ -n "$MANAGED_CLUSTERS" ]]; then
+                        echo "Found managed clusters: $MANAGED_CLUSTERS"
+                        
+                        # Create a policy that will distribute the CA bundle to managed clusters
+                        cat <<EOF | oc apply -f -
+                      apiVersion: policy.open-cluster-management.io/v1beta1
+                      kind: Policy
+                      metadata:
+                        name: policy-cluster-proxy-ca-bundle-distribution
+                        namespace: policies
+                        annotations:
+                          policy.open-cluster-management.io/categories: CA Assessment Authorization and Monitoring
+                          policy.open-cluster-management.io/controls: CA-7 Continuous Monitoring
+                          policy.open-cluster-management.io/standards: NIST SP 800-53
+                      spec:
+                        disabled: false
+                        policy-templates:
+                        - objectDefinition:
+                            apiVersion: policy.open-cluster-management.io/v1beta1
+                            kind: ConfigurationPolicy
+                            metadata:
+                              name: policy-cluster-proxy-ca-bundle-distribution
+                            spec:
+                              object-templates:
+                              - complianceType: musthave
+                                objectDefinition:
+                                  apiVersion: v1
+                                  kind: ConfigMap
+                                  metadata:
+                                    name: cluster-proxy-ca-bundle
+                                    namespace: openshift-config
+                                    labels:
+                                      app.kubernetes.io/name: cluster-proxy-ca
+                                      app.kubernetes.io/component: ca-bundle
+                                      cluster.open-cluster-management.io/type: managed
+                                  data:
+                                    ca-bundle.crt: |
+                      $(echo "$ca_bundle" | sed 's/^/                                      /')
+                              - complianceType: musthave
+                                objectDefinition:
+                                  apiVersion: config.openshift.io/v1
+                                  kind: Proxy
+                                  metadata:
+                                    name: cluster
+                                  spec:
+                                    trustedCA:
+                                      name: cluster-proxy-ca-bundle
+                              remediationAction: enforce
+                              severity: high
+                      EOF
+                        
+                        echo "Policy created to distribute CA bundle to managed clusters"
+                        
+                        # Create placement rule to apply to all managed clusters
+                        cat <<EOF | oc apply -f -
+                      apiVersion: policy.open-cluster-management.io/v1beta1
+                      kind: PlacementRule
+                      metadata:
+                        name: placement-cluster-proxy-ca-bundle
+                        namespace: policies
+                      spec:
+                        clusterConditions:
+                        - type: ManagedClusterConditionAvailable
+                          status: "True"
+                        clusterSelector:
+                          matchExpressions:
+                          - key: cluster.open-cluster-management.io/clusterset
+                            operator: Exists
+                      EOF
+                        
+                        echo "Placement rule created for CA bundle distribution"
+                      else
+                        echo "No managed clusters found for distribution"
+                      fi
+                        
+                        # Verify the ConfigMap
+                        if oc get configmap cluster-proxy-ca-bundle -n openshift-config >/dev/null 2>&1; then
+                          local cert_count
+                          cert_count=$(grep -c 'BEGIN CERTIFICATE' "$CA_BUNDLE_FILE" 2>/dev/null || echo "0")
+                          echo "CA bundle ConfigMap created successfully with $cert_count certificates"
+                        else
+                          echo "Warning: Failed to create CA bundle ConfigMap"
+                        fi
+                      else
+                        echo "Warning: No CA certificates found to create bundle"
+                      fi
+                      
+                      echo "ACM-based CA extraction and configuration completed"
+                    env:
+                    - name: KUBECONFIG
+                      value: "/var/run/secrets/kubernetes.io/serviceaccount/..data/token"
+                  restartPolicy: Never
+                  serviceAccountName: ca-extractor-sa
+              backoffLimit: 3
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: ca-extractor-sa
+              namespace: openshift-config
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              name: ca-extractor-role
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+            rules:
+            - apiGroups: [""]
+              resources: ["configmaps", "secrets"]
+              verbs: ["get", "list", "create", "update", "patch"]
+            - apiGroups: ["config.openshift.io"]
+              resources: ["proxies"]
+              verbs: ["get", "patch"]
+            - apiGroups: ["cluster.open-cluster-management.io"]
+              resources: ["managedclusters"]
+              verbs: ["get", "list"]
+            - apiGroups: ["internal.open-cluster-management.io"]
+              resources: ["managedclusterinfos"]
+              verbs: ["get", "list"]
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            metadata:
+              name: ca-extractor-rolebinding
+              labels:
+                app.kubernetes.io/name: cluster-proxy-ca
+                app.kubernetes.io/component: ca-extraction
+            subjects:
+            - kind: ServiceAccount
+              name: ca-extractor-sa
+              namespace: openshift-config
+            roleRef:
+              kind: ClusterRole
+              name: ca-extractor-role
+              apiGroup: rbac.authorization.k8s.io
+        remediationAction: enforce
+        severity: high

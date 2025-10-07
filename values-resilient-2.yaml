@@ -93,7 +93,7 @@ clusterGroup:
       namespace: openshift-storage
       project: resilient
       repoURL: https://github.com/mhjacks/openshift-data-foundations-chart.git
-      chartVersion: enable_mirroring
+      chartVersion: fix_sync_hooks
       path: "."
       #chart: openshift-data-foundations
       #chartVersion: 0.2.*

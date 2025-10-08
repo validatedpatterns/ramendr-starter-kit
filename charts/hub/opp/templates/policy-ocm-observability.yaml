@@ -54,7 +54,8 @@ spec:
             metadata:
               name: open-cluster-management-observability
               labels:
-                name: open-cluster-management-observability
+                app.kubernetes.io/name: observability
+                app.kubernetes.io/component: namespace
         - complianceType: musthave
           objectDefinition:
             apiVersion: v1

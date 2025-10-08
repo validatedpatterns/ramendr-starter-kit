@@ -155,19 +155,18 @@ spec:
                       # Create placement rule for managed clusters
                       echo "Creating placement rule for managed clusters..."
                       cat <<EOF | oc apply -f -
-                      apiVersion: apps.open-cluster-management.io/v1
-                      kind: PlacementRule
+                      apiVersion: cluster.open-cluster-management.io/v1
+                      kind: Placement
                       metadata:
                         name: placement-cluster-proxy-ca-bundle
                         namespace: open-cluster-management
                       spec:
-                        clusterConditions:
-                        - type: ManagedClusterConditionAvailable
-                          status: "True"
-                        clusterSelector:
-                          matchExpressions:
-                          - key: cluster.open-cluster-management.io/clusterset
-                            operator: Exists
+                        predicates:
+                        - requiredClusterSelector:
+                            labelSelector:
+                              matchExpressions:
+                              - key: cluster.open-cluster-management.io/clusterset
+                                operator: Exists
                       EOF
                       
                       # Create placement binding
@@ -180,8 +179,8 @@ spec:
                         namespace: open-cluster-management
                       placementRef:
                         name: placement-cluster-proxy-ca-bundle
-                        kind: PlacementRule
-                        apiGroup: apps.open-cluster-management.io
+                        kind: Placement
+                        apiGroup: cluster.open-cluster-management.io
                       subjects:
                       - name: policy-cluster-proxy-ca-bundle-distribution
                         kind: Policy

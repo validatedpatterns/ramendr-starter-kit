@@ -45,6 +45,13 @@ spec:
                   containers:
                   - name: ca-extractor
                     image: registry.redhat.io/openshift4/ose-cli:latest
+                    resources:
+                      requests:
+                        memory: "64Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "128Mi"
+                        cpu: "200m"
                     command:
                     - /bin/bash
                     - -c

@@ -9,13 +9,13 @@ metadata:
     argocd.argoproj.io/compare-options: IgnoreExtraneous
     argocd.argoproj.io/sync-options: Prune=false
     argocd.argoproj.io/health-check-ignore: "true"
-    argocd.argoproj.io/hook: "Skip"
+    argocd.argoproj.io/hook: "PostSync"
   labels:
     open-cluster-management.io/policy-set: openshift-plus
   name: policy-ocm-observability
   namespace: policies
 spec:
-  disabled: true
+  disabled: false
   policy-templates:
   - objectDefinition:
       apiVersion: policy.open-cluster-management.io/v1
@@ -35,5 +35,24 @@ spec:
               namespace: open-cluster-management-observability
             data:
               enabled: "true"
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: open-cluster-management-observability
+              labels:
+                name: open-cluster-management-observability
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: observability.open-cluster-management.io/v1beta2
+            kind: MultiClusterObservability
+            metadata:
+              name: observability
+              namespace: open-cluster-management-observability
+            spec:
+              observabilityAddonSpec:
+                enableMetrics: true
+                interval: 30
         remediationAction: enforce
         severity: medium

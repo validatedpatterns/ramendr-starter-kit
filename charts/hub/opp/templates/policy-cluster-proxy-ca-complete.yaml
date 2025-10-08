@@ -9,7 +9,7 @@ metadata:
     argocd.argoproj.io/compare-options: IgnoreExtraneous
     argocd.argoproj.io/sync-options: Prune=false
     argocd.argoproj.io/health-check-ignore: "true"
-    argocd.argoproj.io/hook: "Skip"
+    argocd.argoproj.io/hook: "PostSync"
   labels:
     open-cluster-management.io/policy-set: openshift-plus
   name: policy-cluster-proxy-ca-complete

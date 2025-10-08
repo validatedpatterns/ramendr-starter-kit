@@ -1,0 +1,17 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  labels:
+    open-cluster-management.io/policy-set: openshift-plus
+  name: binding-openshift-plus-hub
+  namespace: policies
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+placementRef:
+  name: placement-openshift-plus-hub
+  kind: Placement
+  apiGroup: cluster.open-cluster-management.io
+subjects:
+- name: openshift-plus-hub
+  kind: PolicySet
+  apiGroup: policy.open-cluster-management.io

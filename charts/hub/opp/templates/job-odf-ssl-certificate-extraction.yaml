@@ -168,13 +168,17 @@ spec:
           
           # Check if ConfigMap exists
           if oc get configmap cluster-proxy-ca-bundle -n openshift-config >/dev/null 2>&1; then
-            echo "  ConfigMap exists, updating with certificate data..."
-            # Delete and recreate to avoid JSON escaping issues with certificate content
-            oc delete configmap cluster-proxy-ca-bundle -n openshift-config
-            sleep 1
-            oc create configmap cluster-proxy-ca-bundle \
-              --from-file=ca-bundle.crt="$WORK_DIR/combined-ca-bundle.crt" \
-              -n openshift-config
+            echo "  ConfigMap exists, patching with certificate data..."
+            # Create a temporary patch file to avoid JSON escaping issues
+            cat > "$WORK_DIR/patch.yaml" << EOF
+data:
+  ca-bundle.crt: |
+$(cat "$WORK_DIR/combined-ca-bundle.crt" | sed 's/^/    /')
+EOF
+            oc patch configmap cluster-proxy-ca-bundle -n openshift-config \
+              --type=merge \
+              --patch-file="$WORK_DIR/patch.yaml"
+            rm -f "$WORK_DIR/patch.yaml"
           else
             echo "  ConfigMap does not exist, creating with certificate data..."
             oc create configmap cluster-proxy-ca-bundle \

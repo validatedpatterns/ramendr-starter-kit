@@ -19,6 +19,3 @@ subjects:
 - name: policy-observability-storage
   kind: Policy
   apiGroup: policy.open-cluster-management.io
-- name: policy-cluster-proxy-ca-complete
-  kind: Policy
-  apiGroup: policy.open-cluster-management.io

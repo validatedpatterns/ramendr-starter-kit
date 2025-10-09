@@ -228,10 +228,44 @@ spec:
             echo "  Warning: Could not update hub cluster proxy"
           }
           
+          # Distribute certificate data to managed clusters
+          echo "7. Distributing certificate data to managed clusters..."
+          for cluster in $MANAGED_CLUSTERS; do
+            if [[ "$cluster" == "local-cluster" ]]; then
+              continue
+            fi
+            
+            echo "  Distributing to $cluster..."
+            
+            # Get kubeconfig for the cluster
+            KUBECONFIG_FILE=""
+            if oc get secret -n "$cluster" -o name | grep -E "(admin-kubeconfig|kubeconfig)" | head -1 | xargs -I {} oc get {} -n "$cluster" -o jsonpath='{.data.kubeconfig}' | base64 -d > "$WORK_DIR/${cluster}-kubeconfig.yaml" 2>/dev/null; then
+              KUBECONFIG_FILE="$WORK_DIR/${cluster}-kubeconfig.yaml"
+            fi
+            
+            if [[ -n "$KUBECONFIG_FILE" && -f "$KUBECONFIG_FILE" ]]; then
+              # Create ConfigMap on managed cluster
+              oc --kubeconfig="$KUBECONFIG_FILE" create configmap cluster-proxy-ca-bundle \
+                --from-file=ca-bundle.crt="$WORK_DIR/combined-ca-bundle.crt" \
+                -n openshift-config \
+                --dry-run=client -o yaml | oc --kubeconfig="$KUBECONFIG_FILE" apply -f -
+              
+              # Update managed cluster proxy
+              oc --kubeconfig="$KUBECONFIG_FILE" patch proxy/cluster --type=merge --patch='{"spec":{"trustedCA":{"name":"cluster-proxy-ca-bundle"}}}' || {
+                echo "    Warning: Could not update $cluster proxy"
+              }
+              
+              echo "    Certificate data distributed to $cluster"
+            else
+              echo "    Warning: Could not get kubeconfig for $cluster"
+            fi
+          done
+          
           echo ""
           echo "✅ ODF SSL certificate management completed successfully!"
           echo "   - Hub cluster CA bundle: Updated"
           echo "   - Hub cluster proxy: Configured"
+          echo "   - Managed clusters: Certificate data distributed"
           echo ""
           echo "This follows Red Hat ODF Disaster Recovery certificate management guidelines"
           echo "for secure SSL access across clusters in the regional DR setup."

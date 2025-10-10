@@ -19,8 +19,7 @@ clusterGroup:
 
     odf-multicluster-orchestrator:
       name: odf-multicluster-orchestrator
-      namespace: openshift-dr-system
-      # namespace: openshift-operators
+      namespace: openshift-operators
 
     openshift-data-foundation:
       name: odf-operator
@@ -70,6 +69,8 @@ clusterGroup:
       namespace: openshift
       project: opp
       path: charts/hub/opp
+      annotations:
+        argocd.argoproj.io/sync-wave: "5"
       syncPolicy:
         automated: {}
         retry:
@@ -95,6 +96,8 @@ clusterGroup:
       namespace: regional-dr
       project: opp
       path: charts/hub/rdr
+      annotations:
+        argocd.argoproj.io/sync-wave: "10"
       ignoreDifferences:
         - group: internal.open-cluster-management.io
           kind: ManagedClusterInfo
@@ -106,6 +109,8 @@ clusterGroup:
       namespace: regional-dr-trigger
       project: opp
       path: charts/hub/rdrtrigger
+      annotations:
+        argocd.argoproj.io/sync-wave: "15"
 
     vault:
       name: vault

@@ -14,20 +14,20 @@ clusterGroup:
         targetNamespaces:
 
   subscriptions:
-    openshift-virtualization:
-      name: kubevirt-hyperconverged
-      namespace: openshift-cnv
-      channel: stable
-
-    node-health-check:
-      name: node-healthcheck-operator
-      namespace: openshift-workload-availability
-      channel: stable
-
-    self-node-remediation:
-      name: self-node-remediation
-      namespace: openshift-workload-availability
-      channel: stable
+#    openshift-virtualization:
+#      name: kubevirt-hyperconverged
+#      namespace: openshift-cnv
+#      channel: stable
+#
+#    node-health-check:
+#      name: node-healthcheck-operator
+#      namespace: openshift-workload-availability
+#      channel: stable
+#
+#    self-node-remediation:
+#      name: self-node-remediation
+#      namespace: openshift-workload-availability
+#      channel: stable
 
     openshift-data-foundation:
       name: odf-operator
@@ -37,32 +37,32 @@ clusterGroup:
     - resilient
 
   imperative:
-    jobs:
-      - name: deploy-kubevirt-workers
-        playbook: ansible/deploy_kubevirt_workers.yml
-        verbosity: -vvv
-      - name: clean-golden-images
-        playbook: ansible/odf_fix_dataimportcrons.yml
-        verbosity: -vvv
-    clusterRoleYaml:
-      - apiGroups:
-          - "*"
-        resources:
-          - machinesets
-          - persistentvolumeclaims
-          - datavolumes
-          - dataimportcrons
-          - datasources
-        verbs:
-          - "*"
-      - apiGroups:
-          - "*"
-        resources:
-          - "*"
-        verbs:
-          - get
-          - list
-          - watch
+    jobs: []
+#      - name: deploy-kubevirt-workers
+#        playbook: ansible/deploy_kubevirt_workers.yml
+#        verbosity: -vvv
+#      - name: clean-golden-images
+#        playbook: ansible/odf_fix_dataimportcrons.yml
+#        verbosity: -vvv
+#    clusterRoleYaml:
+#      - apiGroups:
+#          - "*"
+#        resources:
+#          - machinesets
+#          - persistentvolumeclaims
+#          - datavolumes
+#          - dataimportcrons
+#          - datasources
+#        verbs:
+#          - "*"
+#      - apiGroups:
+#          - "*"
+#        resources:
+#          - "*"
+#        verbs:
+#          - get
+#          - list
+#          - watch
 
   applications:
     ensure-openshift-console-plugins:
@@ -74,19 +74,19 @@ clusterGroup:
       extraValueFiles:
         - '$patternref/overrides/values-console-plugins.yaml'
 
-    golang-external-secrets:
-      name: golang-external-secrets
-      namespace: golang-external-secrets
-      project: resilient
-      chart: golang-external-secrets
-      chartVersion: 0.1.*
-
-    openshift-cnv:
-      name: openshift-cnv
-      namespace: openshift-cnv
-      project: resilient
-      chart: openshift-virtualization-instance
-      chartVersion: 0.1.*
+#    golang-external-secrets:
+#      name: golang-external-secrets
+#      namespace: golang-external-secrets
+#      project: resilient
+#      chart: golang-external-secrets
+#      chartVersion: 0.1.*
+#
+#    openshift-cnv:
+#      name: openshift-cnv
+#      namespace: openshift-cnv
+#      project: resilient
+#      chart: openshift-virtualization-instance
+#      chartVersion: 0.1.*
 
     odf:
       name: odf
@@ -100,11 +100,11 @@ clusterGroup:
       extraValueFiles:
         - '$patternref/overrides/values-odf-chart.yaml'
 
-    node-health-check-operator:
-      name: node-health-check-operator
-      namespace: openshift-workload-availability
-      project: resilient
-      chart: node-health-check-operator
-      chartVersion: 0.1.*
+#    node-health-check-operator:
+#      name: node-health-check-operator
+#      namespace: openshift-workload-availability
+#      project: resilient
+#      chart: node-health-check-operator
+#      chartVersion: 0.1.*
 
   managedClusterGroups: []

@@ -67,7 +67,7 @@ clusterGroup:
     ensure-openshift-console-plugins:
       name: ensure-openshift-console-plugins
       namespace: openshift-console
-      project: resilient
+      project: opp
       chart: ensure-openshift-console-plugins
       chartVersion: 0.1.*
       extraValueFiles:

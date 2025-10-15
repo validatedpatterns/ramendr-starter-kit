@@ -20,7 +20,7 @@ spec:
 {{- if .vmSupport }}
   replicationClassSelector:
     matchLabels:
-      replication.storage.openshift.io/flatten-mode: force    
+      replication.storage.openshift.io/flatten-mode: force
 {{- end }}
 {{- end }}
 {{- end }}

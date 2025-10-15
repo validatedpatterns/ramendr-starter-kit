@@ -274,11 +274,54 @@ spec:
             local kubeconfig_path="$KUBECONFIG_DIR/${cluster}-kubeconfig.yaml"
             
             echo "Downloading kubeconfig for $cluster..."
-            if oc get secret "${cluster}-import" -n "${cluster}" -o jsonpath='{.data.kubeconfig}' | base64 -d > "$kubeconfig_path"; then
-              echo "Kubeconfig downloaded for $cluster"
+            
+            # Special handling for local-cluster (hub cluster)
+            if [[ "$cluster" == "local-cluster" ]]; then
+              # For hub cluster, create a kubeconfig using the service account token
+              local token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              
+              # Create kubeconfig using printf to avoid heredoc issues
+              printf 'apiVersion: v1\nkind: Config\nclusters:\n- cluster:\n    certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt\n    server: https://kubernetes.default.svc\n  name: hub-cluster\ncontexts:\n- context:\n    cluster: hub-cluster\n    user: service-account\n  name: hub-context\ncurrent-context: hub-context\nusers:\n- name: service-account\n  user:\n    token: %s\n' "$token" > "$kubeconfig_path"
+              
+              echo "Created kubeconfig for hub cluster using service account"
+              return 0
+            fi
+            
+            # Get the kubeconfig secret name (same approach as download-kubeconfigs.sh)
+            local kubeconfig_secret=$(oc get secret -n "$cluster" -o name | grep -E "(admin-kubeconfig|kubeconfig)" | head -1)
+            
+            if [[ -z "$kubeconfig_secret" ]]; then
+              echo "No kubeconfig secret found for cluster $cluster"
+              return 1
+            fi
+            
+            echo "Found kubeconfig secret: $kubeconfig_secret"
+            
+            # Try to get the kubeconfig data (same approach as download-kubeconfigs.sh)
+            local kubeconfig_data=""
+            
+            # First try to get the 'kubeconfig' field
+            kubeconfig_data=$(oc get "$kubeconfig_secret" -n "$cluster" -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+            
+            # If that fails, try the 'raw-kubeconfig' field
+            if [[ -z "$kubeconfig_data" ]]; then
+              kubeconfig_data=$(oc get "$kubeconfig_secret" -n "$cluster" -o jsonpath='{.data.raw-kubeconfig}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+            fi
+            
+            if [[ -z "$kubeconfig_data" ]]; then
+              echo "Could not extract kubeconfig data for cluster $cluster"
+              return 1
+            fi
+            
+            # Write the kubeconfig to file
+            echo "$kubeconfig_data" > "$kubeconfig_path"
+            
+            # Validate kubeconfig
+            if oc --kubeconfig="$kubeconfig_path" get nodes --request-timeout=5s &>/dev/null; then
+              echo "Kubeconfig downloaded and validated for $cluster"
               return 0
             else
-              echo "Failed to download kubeconfig for $cluster"
+              echo "Kubeconfig for $cluster is invalid or cluster is unreachable"
               return 1
             fi
           }

@@ -132,7 +132,7 @@ spec:
             fi
             
             # Check ODF operator health
-            local odf_operator_status=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=odf-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+            local odf_operator_status=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app.kubernetes.io/name=odf-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
             odf_operator_status=$(echo "$odf_operator_status" | tr -d ' \n')
             if [[ $odf_operator_status -eq 0 ]]; then
               echo "ODF operator not running on $cluster"

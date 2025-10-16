@@ -43,136 +43,137 @@ spec:
                   return 0
                 fi
                 
-                # Determine expected ArgoCD instance name based on cluster
-                local argocd_instance_name=""
-                case "$cluster" in
-                  "ocp-primary")
-                    argocd_instance_name="resilient-1-gitops-server"
-                    ;;
-                  "ocp-secondary")
-                    argocd_instance_name="resilient-2-gitops-server"
-                    ;;
-                  "local-cluster")
-                    argocd_instance_name="openshift-gitops"
-                    ;;
-                  *)
-                    echo "❌ Unknown cluster $cluster - cannot determine ArgoCD instance name"
-                    return 0
-                    ;;
-                esac
-                
-                echo "Checking for ArgoCD instance: $argocd_instance_name"
-                
-                # Check if the specific ArgoCD instance exists and is running
-                # Look for deployments or statefulsets with the expected name
-                local argocd_deployment=$(oc --kubeconfig="$kubeconfig" get deployment -n "$ARGOCD_NAMESPACE" "$argocd_instance_name" 2>/dev/null || echo "")
-                local argocd_statefulset=$(oc --kubeconfig="$kubeconfig" get statefulset -n "$ARGOCD_NAMESPACE" "$argocd_instance_name" 2>/dev/null || echo "")
-                
-                if [[ -z "$argocd_deployment" && -z "$argocd_statefulset" ]]; then
-                  echo "❌ ArgoCD instance $argocd_instance_name not found on $cluster - cluster appears wedged"
+                # Check if ArgoCD namespace exists
+                if ! oc --kubeconfig="$kubeconfig" get namespace "$ARGOCD_NAMESPACE" &>/dev/null; then
+                  echo "❌ ArgoCD namespace $ARGOCD_NAMESPACE not found on $cluster - cluster appears wedged"
                   return 0
                 fi
                 
-                # Check if the ArgoCD instance is running
-                local running_pods=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" -l app.kubernetes.io/name=argocd-server --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
-                if [[ $running_pods -eq 0 ]]; then
-                  echo "❌ No running ArgoCD server pods on $cluster (instance: $argocd_instance_name) - cluster appears wedged"
+                # Check for exactly one openshift-gitops-operator
+                local gitops_operator_pods=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" -l app.kubernetes.io/name=openshift-gitops-operator --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
+                echo "Found $gitops_operator_pods openshift-gitops-operator pods on $cluster"
+                
+                if [[ $gitops_operator_pods -eq 0 ]]; then
+                  echo "❌ No openshift-gitops-operator pods found on $cluster - cluster appears wedged"
+                  return 0
+                elif [[ $gitops_operator_pods -eq 1 ]]; then
+                  echo "✅ Found 1 openshift-gitops-operator pod on $cluster - operator is healthy"
+                else
+                  echo "⚠️  Found $gitops_operator_pods openshift-gitops-operator pods on $cluster (expected 1) - cluster may be wedged"
                   return 0
                 fi
                 
-                # Check ArgoCD server health endpoint
-                local server_pod=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" -l app.kubernetes.io/name=argocd-server --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-                if [[ -n "$server_pod" ]]; then
-                  if ! oc --kubeconfig="$kubeconfig" exec -n "$ARGOCD_NAMESPACE" "$server_pod" -- curl -s -f http://localhost:8080/healthz --max-time 10 &>/dev/null; then
-                    echo "❌ ArgoCD server health check failed on $cluster - cluster appears wedged"
-                    return 0
-                  fi
-                fi
+                # Check for exactly two ArgoCD servers
+                local argocd_server_pods=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" -l app.kubernetes.io/name=argocd-server --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
+                echo "Found $argocd_server_pods ArgoCD server pods on $cluster"
                 
-                echo "✅ $cluster appears healthy"
-                return 1
+                if [[ $argocd_server_pods -eq 0 ]]; then
+                  echo "❌ No ArgoCD server pods found on $cluster - cluster appears wedged"
+                  return 0
+                elif [[ $argocd_server_pods -eq 1 ]]; then
+                  echo "❌ Only 1 ArgoCD server pod found on $cluster (expected 2) - cluster appears wedged"
+                  return 0
+                elif [[ $argocd_server_pods -eq 2 ]]; then
+                  echo "✅ Found 2 ArgoCD server pods on $cluster - cluster appears healthy"
+                  return 1
+                else
+                  echo "⚠️  Found $argocd_server_pods ArgoCD server pods on $cluster (expected 2) - cluster may be wedged"
+                  return 0
+                fi
               }
           
-          # Function to remediate a wedged cluster
+          # Function to remediate a wedged cluster with maximum violence
           remediate_wedged_cluster() {
             local cluster="$1"
             local kubeconfig="$2"
             
-            echo "🔧 Remediating wedged cluster: $cluster"
+            echo "🔧 Remediating wedged cluster: $cluster with MAXIMUM VIOLENCE"
             
-            # Stop all ArgoCD instances by scaling down deployments
-            echo "  Stopping all ArgoCD instances on $cluster..."
-            oc --kubeconfig="$kubeconfig" scale deployment --all -n "$ARGOCD_NAMESPACE" --replicas=0 &>/dev/null || true
-            oc --kubeconfig="$kubeconfig" scale statefulset --all -n "$ARGOCD_NAMESPACE" --replicas=0 &>/dev/null || true
+            # MAXIMUM VIOLENCE: Delete everything in the openshift-gitops namespace
+            echo "  💥 MAXIMUM VIOLENCE: Deleting ALL resources in $ARGOCD_NAMESPACE namespace..."
             
-            # If scaling doesn't work, try more aggressive cleanup
-            echo "  Attempting aggressive cleanup for stuck deployments..."
+            # Delete all deployments with maximum force
+            echo "  💥 Force deleting all deployments..."
             oc --kubeconfig="$kubeconfig" delete deployment --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
+            
+            # Delete all statefulsets with maximum force
+            echo "  💥 Force deleting all statefulsets..."
             oc --kubeconfig="$kubeconfig" delete statefulset --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
+            
+            # Delete all daemonsets with maximum force
+            echo "  💥 Force deleting all daemonsets..."
+            oc --kubeconfig="$kubeconfig" delete daemonset --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
+            
+            # Delete all pods with maximum force
+            echo "  💥 Force deleting all pods..."
             oc --kubeconfig="$kubeconfig" delete pods --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
             
-            # Wait for all instances to stop
-            echo "  Waiting for ArgoCD instances to stop..."
+            # Delete all services with maximum force
+            echo "  💥 Force deleting all services..."
+            oc --kubeconfig="$kubeconfig" delete service --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
+            
+            # Delete all configmaps with maximum force
+            echo "  💥 Force deleting all configmaps..."
+            oc --kubeconfig="$kubeconfig" delete configmap --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
+            
+            # Delete all secrets with maximum force
+            echo "  💥 Force deleting all secrets..."
+            oc --kubeconfig="$kubeconfig" delete secret --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
+            
+            # Delete all persistent volume claims with maximum force
+            echo "  💥 Force deleting all PVCs..."
+            oc --kubeconfig="$kubeconfig" delete pvc --all -n "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
+            
+            # Wait for everything to be deleted
+            echo "  ⏳ Waiting for all resources to be deleted..."
             local attempt=1
-            while [[ $attempt -le 30 ]]; do
-              local running_pods=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
-              if [[ $running_pods -eq 0 ]]; then
-                echo "  ✅ All ArgoCD instances stopped on $cluster"
+            while [[ $attempt -le 60 ]]; do
+              local remaining_resources=$(oc --kubeconfig="$kubeconfig" get all -n "$ARGOCD_NAMESPACE" --no-headers 2>/dev/null | wc -l)
+              if [[ $remaining_resources -eq 0 ]]; then
+                echo "  ✅ All resources deleted from $ARGOCD_NAMESPACE namespace"
                 break
               fi
-              echo "  Waiting for instances to stop... (attempt $attempt/30)"
+              echo "  Waiting for resources to be deleted... (attempt $attempt/60) - $remaining_resources resources remaining"
               sleep 5
               ((attempt++))
             done
             
-            # Restart all ArgoCD instances by scaling up deployments
-            echo "  Restarting all ArgoCD instances on $cluster..."
-            oc --kubeconfig="$kubeconfig" scale deployment --all -n "$ARGOCD_NAMESPACE" --replicas=1 &>/dev/null || true
-            oc --kubeconfig="$kubeconfig" scale statefulset --all -n "$ARGOCD_NAMESPACE" --replicas=1 &>/dev/null || true
+            # MAXIMUM VIOLENCE: Delete and recreate the namespace
+            echo "  💥 MAXIMUM VIOLENCE: Deleting and recreating $ARGOCD_NAMESPACE namespace..."
+            oc --kubeconfig="$kubeconfig" delete namespace "$ARGOCD_NAMESPACE" --grace-period=0 --force &>/dev/null || true
             
-            # Wait for pods to restart
-            echo "  Waiting for ArgoCD pods to restart on $cluster..."
+            # Wait for namespace to be deleted
+            echo "  ⏳ Waiting for namespace to be deleted..."
             local attempt=1
             while [[ $attempt -le 30 ]]; do
-              local running_pods=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
-              local total_pods=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" --no-headers 2>/dev/null | wc -l)
-              
-              if [[ $running_pods -gt 0 && $running_pods -eq $total_pods ]]; then
-                echo "  ✅ ArgoCD pods restarted successfully on $cluster"
+              if ! oc --kubeconfig="$kubeconfig" get namespace "$ARGOCD_NAMESPACE" &>/dev/null; then
+                echo "  ✅ Namespace $ARGOCD_NAMESPACE deleted"
                 break
               fi
-              
-              echo "  Waiting for pods to restart... (attempt $attempt/30)"
-              sleep 10
+              echo "  Waiting for namespace to be deleted... (attempt $attempt/30)"
+              sleep 5
               ((attempt++))
             done
             
-            if [[ $attempt -gt 30 ]]; then
-              echo "  ⚠️  ArgoCD pods may not have fully restarted on $cluster"
-            fi
+            # Recreate the namespace
+            echo "  🔄 Recreating $ARGOCD_NAMESPACE namespace..."
+            oc --kubeconfig="$kubeconfig" create namespace "$ARGOCD_NAMESPACE" &>/dev/null || true
             
-            # Trigger ArgoCD refresh/sync
-            echo "  Triggering ArgoCD refresh on $cluster..."
-            local server_pod=$(oc --kubeconfig="$kubeconfig" get pods -n "$ARGOCD_NAMESPACE" -l app.kubernetes.io/name=argocd-server --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-            if [[ -n "$server_pod" ]]; then
-              # Trigger refresh of all applications
-              oc --kubeconfig="$kubeconfig" exec -n "$ARGOCD_NAMESPACE" "$server_pod" -- argocd app list -o name | while read app; do
-                if [[ -n "$app" ]]; then
-                  echo "    Refreshing $app..."
-                  oc --kubeconfig="$kubeconfig" exec -n "$ARGOCD_NAMESPACE" "$server_pod" -- argocd app get "$app" --refresh &>/dev/null || true
-                fi
-              done
-              
-              # Trigger hard refresh
-              oc --kubeconfig="$kubeconfig" exec -n "$ARGOCD_NAMESPACE" "$server_pod" -- argocd app list -o name | while read app; do
-                if [[ -n "$app" ]]; then
-                  echo "    Hard refreshing $app..."
-                  oc --kubeconfig="$kubeconfig" exec -n "$ARGOCD_NAMESPACE" "$server_pod" -- argocd app get "$app" --hard-refresh &>/dev/null || true
-                fi
-              done
-            fi
+            # Wait for namespace to be ready
+            echo "  ⏳ Waiting for namespace to be ready..."
+            local attempt=1
+            while [[ $attempt -le 30 ]]; do
+              if oc --kubeconfig="$kubeconfig" get namespace "$ARGOCD_NAMESPACE" &>/dev/null; then
+                echo "  ✅ Namespace $ARGOCD_NAMESPACE recreated"
+                break
+              fi
+              echo "  Waiting for namespace to be ready... (attempt $attempt/30)"
+              sleep 5
+              ((attempt++))
+            done
             
-            echo "  ✅ Remediation completed for $cluster"
+            echo "  💥 MAXIMUM VIOLENCE remediation completed for $cluster"
+            echo "  ⚠️  Note: The openshift-gitops-operator will need to be reinstalled to restore functionality"
           }
           
               # Function to download kubeconfig for a cluster (using same logic as download-kubeconfigs.sh)

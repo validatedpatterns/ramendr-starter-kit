@@ -290,14 +290,54 @@ spec:
                 
                 wedged_clusters=()
                 
-                # Check each managed cluster
+                # First, check if all managed clusters are available and ready
+                echo "🔍 Checking if all managed clusters are available and ready..."
+                unavailable_clusters=()
+                for cluster in $MANAGED_CLUSTERS; do
+                  if [[ "$cluster" == "local-cluster" ]]; then
+                    continue
+                  fi
+                  
+                  echo "Checking availability of cluster: $cluster"
+                  
+                  # Check if cluster is available
+                  cluster_status=$(oc get managedcluster "$cluster" -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterConditionAvailable")].status}' 2>/dev/null || echo "Unknown")
+                  if [[ "$cluster_status" != "True" ]]; then
+                    echo "⚠️  Cluster $cluster is not available (status: $cluster_status)"
+                    unavailable_clusters+=("$cluster")
+                    continue
+                  fi
+                  
+                  # Check if cluster is joined
+                  joined_status=$(oc get managedcluster "$cluster" -o jsonpath='{.status.conditions[?(@.type=="ManagedClusterJoined")].status}' 2>/dev/null || echo "Unknown")
+                  if [[ "$joined_status" != "True" ]]; then
+                    echo "⚠️  Cluster $cluster is not joined (status: $joined_status)"
+                    unavailable_clusters+=("$cluster")
+                    continue
+                  fi
+                  
+                  echo "✅ Cluster $cluster is available and joined"
+                done
+                
+                # If any clusters are not ready, wait and retry
+                if [[ ${#unavailable_clusters[@]} -gt 0 ]]; then
+                  echo "⏳ Waiting for clusters to be ready: ${unavailable_clusters[*]}"
+                  echo "Clusters must be available and joined before health checks can begin"
+                  sleep $SLEEP_INTERVAL
+                  ((attempt++))
+                  continue
+                fi
+                
+                echo "✅ All managed clusters are available and ready - proceeding with health checks"
+                
+                # Now check each managed cluster for ArgoCD health
                 kubeconfig_failures=()
                 for cluster in $MANAGED_CLUSTERS; do
                   if [[ "$cluster" == "local-cluster" ]]; then
                     continue
                   fi
                   
-                  echo "Checking cluster: $cluster"
+                  echo "Checking ArgoCD health on cluster: $cluster"
                   
                   # Download kubeconfig
                   if download_kubeconfig "$cluster"; then

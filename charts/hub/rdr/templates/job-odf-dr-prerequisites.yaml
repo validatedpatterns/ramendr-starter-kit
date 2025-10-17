@@ -207,19 +207,33 @@ spec:
             fi
             
             # Check if all CA bundles contain certificates from all three clusters
+            echo "🔍 Debug: Checking CA bundle contents..."
+            echo "Hub CA bundle size: ${#hub_ca_bundle} characters"
+            echo "Primary CA bundle size: ${#primary_ca_bundle} characters"  
+            echo "Secondary CA bundle size: ${#secondary_ca_bundle} characters"
+            echo "Hub CA bundle first 500 chars:"
+            echo "${hub_ca_bundle:0:500}"
+            echo ""
+            
             # Look for hub cluster certificates
             if [[ "$hub_ca_bundle" != *"# CA from hub-ca"* ]]; then
               echo "Hub cluster CA bundle missing hub-ca certificate"
+              echo "Available markers in hub CA bundle:"
+              echo "$hub_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
               return 1
             fi
             
             if [[ "$primary_ca_bundle" != *"# CA from hub-ca"* ]]; then
               echo "Primary cluster CA bundle missing hub-ca certificate"
+              echo "Available markers in primary CA bundle:"
+              echo "$primary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
               return 1
             fi
             
             if [[ "$secondary_ca_bundle" != *"# CA from hub-ca"* ]]; then
               echo "Secondary cluster CA bundle missing hub-ca certificate"
+              echo "Available markers in secondary CA bundle:"
+              echo "$secondary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
               return 1
             fi
             

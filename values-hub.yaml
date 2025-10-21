@@ -55,7 +55,7 @@ clusterGroup:
       project: hub
       path: "."
       repoURL: https://github.com/mbaldessari/acm-chart
-      chartVersion: with_patch
+      chartVersion: without_patch
       #chart: acm
       #chartVersion: 0.1.*
       #repoURL: https://github.com/mbaldessari/acm-chart.git

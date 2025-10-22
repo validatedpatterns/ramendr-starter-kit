@@ -483,9 +483,6 @@ spec:
           echo ""
           echo "This follows Red Hat ODF Disaster Recovery certificate management guidelines"
           echo "for secure SSL access across clusters in the regional DR setup."
-          
-          # Cleanup
-          rm -rf "$WORK_DIR"
         env:
         - name: KUBECONFIG
           value: ""

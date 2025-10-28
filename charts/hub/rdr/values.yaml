@@ -19,10 +19,10 @@ regionalDR:
                 type: m5.4xlarge
           compute:
             - name: worker
-              replicas: 4
+              replicas: 3
               platform:
                 aws:
-                  type: m5.4xlarge
+                  type: m5.metal
           networking:
             clusterNetwork:
               - cidr: 10.128.0.0/14
@@ -57,10 +57,10 @@ regionalDR:
                 type: m5.4xlarge
           compute:
             - name: worker
-              replicas: 4
+              replicas: 3
               platform:
                 aws:
-                  type: m5.4xlarge
+                  type: m5.metal
           networking:
             clusterNetwork:
               - cidr: 10.132.0.0/14

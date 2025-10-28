@@ -38,9 +38,6 @@ clusterGroup:
 
   imperative:
     jobs:
-      - name: deploy-kubevirt-workers
-        playbook: ansible/deploy_kubevirt_workers.yml
-        verbosity: -vvv
       - name: clean-golden-images
         playbook: ansible/odf_fix_dataimportcrons.yml
         verbosity: -vvv
@@ -48,7 +45,6 @@ clusterGroup:
       - apiGroups:
           - "*"
         resources:
-          - machinesets
           - persistentvolumeclaims
           - datavolumes
           - dataimportcrons

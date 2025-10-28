@@ -1,11 +1,13 @@
-{{ $clusters := .Values.regionalDR.clusters }}
+{{- range .Values.regionalDR }}
+{{ $clusterSet := .name }}
+{{ $clusters := .clusters }}
 ---
 apiVersion: multicluster.odf.openshift.io/v1alpha1
 kind: MirrorPeer
 metadata:
   labels:
     cluster.open-cluster-management.io/backup: resource
-  name: mirrorpeer-resilient
+  name: mirrorpeer-{{ $clusterSet }}
   annotations:
     argocd.argoproj.io/sync-wave: "7"
 spec:
@@ -20,3 +22,4 @@ spec:
       namespace: openshift-storage
   manageS3: true
   type: async
+{{- end }}

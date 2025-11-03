@@ -10,7 +10,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "6"
 spec:
   backoffLimit: 50
-  activeDeadlineSeconds: 7200  # 2 hour timeout
+  activeDeadlineSeconds: 14400
   template:
     spec:
       restartPolicy: OnFailure

@@ -563,36 +563,78 @@ spec:
           
           # Check if ramen-hub-operator-config exists
           if oc get configmap ramen-hub-operator-config -n openshift-operators &>/dev/null; then
-            echo "  ConfigMap exists, updating ramen_manager_config.yaml with caCertificates..."
+            echo "  ConfigMap exists, updating ramen_manager_config.yaml with caCertificates in s3StoreProfiles..."
             
             # Get existing ramen_manager_config.yaml content
             EXISTING_YAML=$(oc get configmap ramen-hub-operator-config -n openshift-operators -o jsonpath='{.data.ramen_manager_config\.yaml}' 2>/dev/null || echo "")
             
-            # Create updated YAML with caCertificates
+            # Create updated YAML with caCertificates in each s3StoreProfiles item
             if [[ -n "$EXISTING_YAML" ]]; then
-              # Use yq to merge caCertificates into existing YAML, or use a simple approach
               # Create a temporary YAML file with the update
               echo "$EXISTING_YAML" > existing-ramen-config.yaml
               
-              # Add or update caCertificates in the YAML
-              # Check if caCertificates already exists
-              if grep -q "^caCertificates:" existing-ramen-config.yaml; then
-                # Update existing caCertificates
-                if command -v yq &>/dev/null; then
-                  yq eval ".caCertificates = \"$CA_BUNDLE_BASE64\"" -i existing-ramen-config.yaml
-                else
-                  # Fallback: use sed to update the line
-                  sed -i "s/^caCertificates:.*/caCertificates: $CA_BUNDLE_BASE64/" existing-ramen-config.yaml
-                fi
+              # Use yq to update caCertificates in each s3StoreProfiles item
+              if command -v yq &>/dev/null; then
+                # Update caCertificates for each item in s3StoreProfiles array
+                yq eval ".s3StoreProfiles[]?.caCertificates = \"$CA_BUNDLE_BASE64\"" -i existing-ramen-config.yaml 2>/dev/null || {
+                  echo "  Warning: Could not update s3StoreProfiles with yq, trying alternative approach..."
+                  # Fallback: manually add caCertificates to each profile
+                  python3 -c "
+import yaml
+import sys
+
+with open('existing-ramen-config.yaml', 'r') as f:
+    config = yaml.safe_load(f) or {}
+
+if 's3StoreProfiles' not in config:
+    config['s3StoreProfiles'] = []
+
+for profile in config.get('s3StoreProfiles', []):
+    profile['caCertificates'] = '$CA_BUNDLE_BASE64'
+
+with open('existing-ramen-config.yaml', 'w') as f:
+    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+" 2>/dev/null || {
+                    echo "  Warning: Python/yaml not available, using sed fallback..."
+                    # Very basic sed fallback - add caCertificates after each profile name
+                    sed -i "/^  - name:/a\    caCertificates: \"$CA_BUNDLE_BASE64\"" existing-ramen-config.yaml 2>/dev/null || true
+                  }
+                }
               else
-                # Add new caCertificates at the end
-                echo "caCertificates: $CA_BUNDLE_BASE64" >> existing-ramen-config.yaml
+                # Fallback: use Python if available
+                if command -v python3 &>/dev/null; then
+                  python3 -c "
+import yaml
+import sys
+
+with open('existing-ramen-config.yaml', 'r') as f:
+    config = yaml.safe_load(f) or {}
+
+if 's3StoreProfiles' not in config:
+    config['s3StoreProfiles'] = []
+
+for profile in config.get('s3StoreProfiles', []):
+    profile['caCertificates'] = '$CA_BUNDLE_BASE64'
+
+with open('existing-ramen-config.yaml', 'w') as f:
+    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+" 2>/dev/null || {
+                    echo "  Warning: Python yaml module not available, using sed fallback..."
+                    # Very basic sed fallback
+                    sed -i "/^  - name:/a\    caCertificates: \"$CA_BUNDLE_BASE64\"" existing-ramen-config.yaml 2>/dev/null || true
+                  }
+                else
+                  echo "  Error: yq or python3 not available - cannot update s3StoreProfiles"
+                  echo "  Manual intervention required"
+                fi
               fi
               
               UPDATED_YAML=$(cat existing-ramen-config.yaml)
             else
-              # No existing YAML, create new one with just caCertificates
-              UPDATED_YAML="caCertificates: $CA_BUNDLE_BASE64"
+              # No existing YAML, create new one with s3StoreProfiles containing caCertificates
+              UPDATED_YAML="s3StoreProfiles:
+  - name: default
+    caCertificates: \"$CA_BUNDLE_BASE64\""
             fi
             
             # Create patch file for ConfigMap update
@@ -601,29 +643,60 @@ spec:
             echo "$UPDATED_YAML" | sed 's/^/    /' >> ramen-patch.yaml
             
             # Patch the ConfigMap with updated YAML
-            oc patch configmap ramen-hub-operator-config -n openshift-operators \
+            if oc patch configmap ramen-hub-operator-config -n openshift-operators \
               --type=merge \
-              --patch-file=ramen-patch.yaml || {
-              echo "  Warning: Could not patch ramen-hub-operator-config"
-            }
+              --patch-file=ramen-patch.yaml 2>&1; then
+              
+              # Verify the patch was successful
+              sleep 2
+              VERIFIED_YAML=$(oc get configmap ramen-hub-operator-config -n openshift-operators -o jsonpath='{.data.ramen_manager_config\.yaml}' 2>/dev/null || echo "")
+              
+              if echo "$VERIFIED_YAML" | grep -q "s3StoreProfiles" && echo "$VERIFIED_YAML" | grep -q "caCertificates" && echo "$VERIFIED_YAML" | grep -q "$CA_BUNDLE_BASE64"; then
+                echo "  ✅ ramen-hub-operator-config updated and verified successfully"
+                echo "     caCertificates added to all s3StoreProfiles items"
+              else
+                echo "  ⚠️  Warning: ramen-hub-operator-config patched but verification failed"
+                echo "     The caCertificates field may not have been set correctly in s3StoreProfiles"
+                echo "     Current YAML content (first 10 lines):"
+                echo "$VERIFIED_YAML" | head -n 10
+              fi
+            else
+              echo "  ❌ Error: Could not patch ramen-hub-operator-config"
+              echo "     Attempting alternative approach using oc apply..."
+              
+              # Alternative: Use oc apply with the patch file
+              if oc apply -f ramen-patch.yaml 2>&1; then
+                sleep 2
+                VERIFIED_YAML=$(oc get configmap ramen-hub-operator-config -n openshift-operators -o jsonpath='{.data.ramen_manager_config\.yaml}' 2>/dev/null || echo "")
+                
+                if echo "$VERIFIED_YAML" | grep -q "s3StoreProfiles" && echo "$VERIFIED_YAML" | grep -q "caCertificates" && echo "$VERIFIED_YAML" | grep -q "$CA_BUNDLE_BASE64"; then
+                  echo "  ✅ ramen-hub-operator-config updated using alternative approach"
+                else
+                  echo "  ⚠️  Warning: Alternative approach applied but verification failed"
+                fi
+              else
+                echo "  ❌ Alternative approach also failed"
+                echo "     Manual intervention may be required to set caCertificates in s3StoreProfiles"
+              fi
+            fi
             
             rm -f existing-ramen-config.yaml ramen-patch.yaml
+            
           else
-            echo "  ConfigMap does not exist, creating with ramen_manager_config.yaml containing caCertificates..."
+            echo "  ConfigMap does not exist, creating with ramen_manager_config.yaml containing s3StoreProfiles with caCertificates..."
             oc create configmap ramen-hub-operator-config -n openshift-operators \
-              --from-literal=ramen_manager_config.yaml="caCertificates: $CA_BUNDLE_BASE64" || {
+              --from-literal=ramen_manager_config.yaml="s3StoreProfiles:
+  - name: default
+    caCertificates: \"$CA_BUNDLE_BASE64\"" || {
               echo "  Warning: Could not create ramen-hub-operator-config"
             }
           fi
           
-          echo "  ramen-hub-operator-config updated successfully with base64-encoded CA bundle"
+          echo "  ramen-hub-operator-config updated successfully with base64-encoded CA bundle in s3StoreProfiles"
           echo "  This enables SSL access for discovered applications in ODF Disaster Recovery"
           
-          # Update ramen-dr-cluster-operator-config on managed clusters with base64-encoded CA bundle
-          echo "7c. Updating ramen-dr-cluster-operator-config on managed clusters..."
-          
-          # Base64 encode the combined CA bundle (already done, but ensure it's available)
-          CA_BUNDLE_BASE64=$(base64 -w 0 < combined-ca-bundle.crt 2>/dev/null || base64 < combined-ca-bundle.crt | tr -d '\n')
+          # Restart Velero pods on managed clusters to pick up new CA certificates
+          echo "7c. Restarting Velero pods on managed clusters..."
           
           MANAGED_CLUSTERS=$(oc get managedclusters -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
           
@@ -635,123 +708,21 @@ spec:
             echo "  Processing cluster: $cluster"
             
             # Get kubeconfig for the cluster
-            KUBECONFIG_FILE=""
-            if oc get secret -n "$cluster" -o name | grep -E "(admin-kubeconfig|kubeconfig)" | head -1 | xargs -I {} oc get {} -n "$cluster" -o jsonpath='{.data.kubeconfig}' | base64 -d > "/tmp/${cluster}-kubeconfig.yaml" 2>/dev/null; then
-              KUBECONFIG_FILE="/tmp/${cluster}-kubeconfig.yaml"
-            fi
-            
-            if [[ -n "$KUBECONFIG_FILE" && -f "$KUBECONFIG_FILE" ]]; then
-              # Check if ramen-dr-cluster-operator-config exists
-              if oc --kubeconfig="$KUBECONFIG_FILE" get configmap ramen-dr-cluster-operator-config -n openshift-dr-system &>/dev/null; then
-                echo "    ConfigMap exists, updating ramen_manager_config.yaml with caCertificates..."
-                
-                # Get existing ramen_manager_config.yaml content
-                EXISTING_YAML=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap ramen-dr-cluster-operator-config -n openshift-dr-system -o jsonpath='{.data.ramen_manager_config\.yaml}' 2>/dev/null || echo "")
-                
-                # Create updated YAML with caCertificates
-                if [[ -n "$EXISTING_YAML" ]]; then
-                  # Create a temporary YAML file with the update
-                  echo "$EXISTING_YAML" > existing-ramen-config.yaml
-                  
-                  # Add or update caCertificates in the YAML
-                  # Check if caCertificates already exists (handle both with and without spaces)
-                  if grep -qE "^caCertificates[[:space:]]*:" existing-ramen-config.yaml; then
-                    # Update existing caCertificates
-                    if command -v yq &>/dev/null; then
-                      yq eval ".caCertificates = \"$CA_BUNDLE_BASE64\"" -i existing-ramen-config.yaml 2>/dev/null || {
-                        # Fallback: use sed to update the line
-                        sed -i "s|^caCertificates[[:space:]]*:.*|caCertificates: \"$CA_BUNDLE_BASE64\"|" existing-ramen-config.yaml
-                      }
-                    else
-                      # Use sed to update the line - match the pattern and replace with quoted value
-                      sed -i "s|^caCertificates[[:space:]]*:.*|caCertificates: \"$CA_BUNDLE_BASE64\"|" existing-ramen-config.yaml
-                    fi
-                  else
-                    # Add new caCertificates at the end (ensure it's on a new line)
-                    echo "" >> existing-ramen-config.yaml
-                    echo "caCertificates: \"$CA_BUNDLE_BASE64\"" >> existing-ramen-config.yaml
-                  fi
-                  
-                  UPDATED_YAML=$(cat existing-ramen-config.yaml)
-                else
-                  # No existing YAML, create new one with just caCertificates (quoted)
-                  UPDATED_YAML="caCertificates: \"$CA_BUNDLE_BASE64\""
-                fi
-                
-                # Create patch file for ConfigMap update
-                echo "data:" > ramen-patch.yaml
-                echo "  ramen_manager_config.yaml: |" >> ramen-patch.yaml
-                echo "$UPDATED_YAML" | sed 's/^/    /' >> ramen-patch.yaml
-                
-                # Patch the ConfigMap with updated YAML
-                if oc --kubeconfig="$KUBECONFIG_FILE" patch configmap ramen-dr-cluster-operator-config -n openshift-dr-system \
-                  --type=merge \
-                  --patch-file=ramen-patch.yaml 2>&1; then
-                  
-                  # Verify the patch was successful
-                  sleep 2
-                  VERIFIED_YAML=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap ramen-dr-cluster-operator-config -n openshift-dr-system -o jsonpath='{.data.ramen_manager_config\.yaml}' 2>/dev/null || echo "")
-                  
-                  if echo "$VERIFIED_YAML" | grep -qE "caCertificates[[:space:]]*:" && echo "$VERIFIED_YAML" | grep -q "$CA_BUNDLE_BASE64"; then
-                    echo "    ✅ ramen-dr-cluster-operator-config updated and verified successfully on $cluster"
-                  else
-                    echo "    ⚠️  Warning: ramen-dr-cluster-operator-config patched but verification failed on $cluster"
-                    echo "     The caCertificates field may not have been set correctly"
-                    echo "     Current YAML content:"
-                    echo "$VERIFIED_YAML" | head -n 5
-                  fi
-                else
-                  echo "    ❌ Error: Could not patch ramen-dr-cluster-operator-config on $cluster"
-                  echo "     Attempting alternative approach using oc apply..."
-                  
-                  # Alternative: Use oc apply with the patch file
-                  if oc --kubeconfig="$KUBECONFIG_FILE" apply -f ramen-patch.yaml 2>&1; then
-                    # Verify the patch was successful
-                    sleep 2
-                    VERIFIED_YAML=$(oc --kubeconfig="$KUBECONFIG_FILE" get configmap ramen-dr-cluster-operator-config -n openshift-dr-system -o jsonpath='{.data.ramen_manager_config\.yaml}' 2>/dev/null || echo "")
-                    
-                    if echo "$VERIFIED_YAML" | grep -qE "caCertificates[[:space:]]*:" && echo "$VERIFIED_YAML" | grep -q "$CA_BUNDLE_BASE64"; then
-                      echo "    ✅ ramen-dr-cluster-operator-config updated using alternative approach on $cluster"
-                    else
-                      echo "    ⚠️  Warning: Alternative approach applied but verification failed on $cluster"
-                      echo "     The caCertificates field may not have been set correctly"
-                    fi
-                  else
-                    echo "    ❌ Alternative approach also failed on $cluster"
-                    echo "     Manual intervention may be required to set caCertificates"
-                  fi
-                fi
-                
-                rm -f existing-ramen-config.yaml ramen-patch.yaml
-              else
-                echo "    ⚠️  Warning: ramen-dr-cluster-operator-config not found on $cluster - it may not be deployed yet"
-                echo "     Configuration changes will be applied when the ConfigMap is created"
-              fi
-            else
-              echo "    ❌ Could not get kubeconfig for $cluster - skipping ConfigMap update"
-            fi
-          done
-          
-          echo "  ✅ Completed ramen-dr-cluster-operator-config updates on managed clusters"
-          
-          # Restart Velero pods on managed clusters to pick up new CA certificates
-          echo "7d. Restarting Velero pods on managed clusters..."
-          
-          for cluster in $MANAGED_CLUSTERS; do
-            if [[ "$cluster" == "local-cluster" ]]; then
-              continue
-            fi
-            
-            echo "  Processing cluster: $cluster"
-            
-            # Get kubeconfig for the cluster (reuse if already fetched)
             KUBECONFIG_FILE="/tmp/${cluster}-kubeconfig.yaml"
+            if [[ ! -f "$KUBECONFIG_FILE" ]]; then
+              # Fetch kubeconfig if not already available
+              if oc get secret -n "$cluster" -o name | grep -E "(admin-kubeconfig|kubeconfig)" | head -1 | xargs -I {} oc get {} -n "$cluster" -o jsonpath='{.data.kubeconfig}' | base64 -d > "$KUBECONFIG_FILE" 2>/dev/null; then
+                echo "    Fetched kubeconfig for $cluster"
+              else
+                echo "    ❌ Could not get kubeconfig for $cluster - skipping Velero pod restart"
+                continue
+              fi
+            fi
             
-            if [[ -f "$KUBECONFIG_FILE" ]]; then
-              # Find Velero pods in openshift-adp namespace
-              VELERO_PODS=$(oc --kubeconfig="$KUBECONFIG_FILE" get pods -n openshift-adp -l component=velero -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
-              
-              if [[ -n "$VELERO_PODS" ]]; then
+            # Find Velero pods in openshift-adp namespace
+            VELERO_PODS=$(oc --kubeconfig="$KUBECONFIG_FILE" get pods -n openshift-adp -l component=velero -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+            
+            if [[ -n "$VELERO_PODS" ]]; then
                 echo "    Found Velero pods: $VELERO_PODS"
                 
                 for pod in $VELERO_PODS; do
@@ -812,9 +783,6 @@ spec:
                 echo "    ⚠️  Warning: Velero pods not found on $cluster - they may not be deployed yet"
                 echo "     New CA certificates will be applied when the pods start"
               fi
-            else
-              echo "    ❌ Could not get kubeconfig for $cluster - skipping Velero pod restart"
-            fi
           done
           
           echo "  ✅ Completed Velero pod restarts on managed clusters"
@@ -952,8 +920,7 @@ spec:
           echo "   - Hub cluster CA bundle: Updated (includes trusted CA + ingress CA)"
           echo "   - Hub cluster proxy: Configured"
           echo "   - Managed clusters: ramenddr-cluster-operator pods restarted"
-          echo "   - ramen-hub-operator-config: Updated with base64-encoded CA bundle (hub cluster)"
-          echo "   - ramen-dr-cluster-operator-config: Updated with base64-encoded CA bundle (managed clusters)"
+          echo "   - ramen-hub-operator-config: Updated with base64-encoded CA bundle in s3StoreProfiles (hub cluster)"
           echo "   - Managed clusters: Velero pods restarted (openshift-adp namespace)"
           echo "   - Managed clusters: Certificate data distributed (includes ingress CAs)"
           echo ""

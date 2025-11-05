@@ -9,6 +9,7 @@ clusterGroup:
     - openshift-storage
     - policies
     - gitops-vms
+    - external-dns-operator
     - openshift-adp:
         operatorGroup: true
         targetNamespaces:
@@ -22,6 +23,11 @@ clusterGroup:
       name: kubevirt-hyperconverged
       namespace: openshift-cnv
       channel: stable
+
+    external-dns:
+      name: external-dns-operator
+      namespace: external-dns-operator
+      channel: stable-v1
 
     node-health-check:
       name: node-healthcheck-operator
@@ -107,6 +113,13 @@ clusterGroup:
       namespace: openshift-workload-availability
       project: resilient
       chart: node-health-check-operator
+      chartVersion: 0.1.*
+
+    external-dns-operator:
+      name: external-dns-operator
+      namespace: external-dns-operator
+      project: hub
+      chart: external-dns-operator
       chartVersion: 0.1.*
 
   managedClusterGroups: []

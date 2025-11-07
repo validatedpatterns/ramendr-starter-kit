@@ -21,7 +21,7 @@ spec:
       restartPolicy: Never
       containers:
       - name: edge-gitops-vms-deploy
-        image: registry.redhat.io/openshift4/ose-cli:latest
+        image: quay.io/validatedpatterns/utility-container:latest
         resources:
           requests:
             memory: "256Mi"

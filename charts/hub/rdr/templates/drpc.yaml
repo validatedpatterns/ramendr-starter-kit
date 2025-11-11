@@ -14,7 +14,6 @@ spec:
     apiVersion: ramendr.openshift.io/v1alpha1
     kind: DRPolicy
     name: 2m-vm
-  failoverCluster: ocp-primary
   kubeObjectProtection:
     captureInterval: 2m0s
     kubeObjectSelector:
@@ -28,7 +27,7 @@ spec:
     kind: Placement
     name: gitops-vm-protection-placement-1
     namespace: openshift-dr-ops
-  # preferredCluster: ocp-primary
+  preferredCluster: ocp-primary
   protectedNamespaces:
   - gitops-vms
   pvcSelector:

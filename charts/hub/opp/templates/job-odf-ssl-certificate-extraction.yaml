@@ -10,8 +10,6 @@ metadata:
     argocd.argoproj.io/sync-wave: "1"
     argocd.argoproj.io/sync-options: Prune=false
     argocd.argoproj.io/compare-options: IgnoreExtraneous
-    argocd.argoproj.io/hook: "PostSync"
-    argocd.argoproj.io/hook-delete-policy: "BeforeHookCreation"
 spec:
   template:
     spec:
@@ -37,4 +35,4 @@ spec:
       serviceAccountName: odf-ssl-extractor-sa
   backoffLimit: 10
   activeDeadlineSeconds: 3600
-  ttlSecondsAfterFinished: 300
+  ttlSecondsAfterFinished: 3600

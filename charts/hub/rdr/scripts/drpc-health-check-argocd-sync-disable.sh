@@ -210,7 +210,8 @@ disable_argocd_sync() {
   echo "Disabling ArgoCD sync for application $ARGOCD_APP_NAME in namespace $ARGOCD_APP_NAMESPACE..."
   
   # Check if the Application exists in the specified namespace
-  if ! oc get application "$ARGOCD_APP_NAME" -n "$ARGOCD_APP_NAMESPACE" &>/dev/null; then
+  # Using applications.argoproj.io resource type explicitly
+  if ! oc get applications.argoproj.io "$ARGOCD_APP_NAME" -n "$ARGOCD_APP_NAMESPACE" &>/dev/null; then
     echo "  ❌ ArgoCD Application $ARGOCD_APP_NAME not found in namespace $ARGOCD_APP_NAMESPACE"
     return 1
   fi
@@ -219,7 +220,7 @@ disable_argocd_sync() {
   local app_namespace="$ARGOCD_APP_NAMESPACE"
   
   # Check current sync policy
-  local current_sync_policy=$(oc get application "$ARGOCD_APP_NAME" -n "$app_namespace" -o jsonpath='{.spec.syncPolicy}' 2>/dev/null || echo "")
+  local current_sync_policy=$(oc get applications.argoproj.io "$ARGOCD_APP_NAME" -n "$app_namespace" -o jsonpath='{.spec.syncPolicy}' 2>/dev/null || echo "")
   
   if [[ -z "$current_sync_policy" || "$current_sync_policy" == "null" ]]; then
     echo "  Application already has no sync policy (sync is disabled)"
@@ -227,7 +228,7 @@ disable_argocd_sync() {
   fi
   
   # Check if automated sync is enabled
-  local automated_sync=$(oc get application "$ARGOCD_APP_NAME" -n "$app_namespace" -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null || echo "")
+  local automated_sync=$(oc get applications.argoproj.io "$ARGOCD_APP_NAME" -n "$app_namespace" -o jsonpath='{.spec.syncPolicy.automated}' 2>/dev/null || echo "")
   
   if [[ -z "$automated_sync" || "$automated_sync" == "null" ]]; then
     echo "  ✅ ArgoCD sync is already disabled (no automated sync policy)"
@@ -238,12 +239,12 @@ disable_argocd_sync() {
   echo "  Current sync policy has automated sync enabled, disabling it..."
   
   # Patch the Application to remove automated sync
-  if oc patch application "$ARGOCD_APP_NAME" -n "$app_namespace" --type=json -p='[{"op": "remove", "path": "/spec/syncPolicy/automated"}]' 2>/dev/null; then
+  if oc patch applications.argoproj.io "$ARGOCD_APP_NAME" -n "$app_namespace" --type=json -p='[{"op": "remove", "path": "/spec/syncPolicy/automated"}]' 2>/dev/null; then
     echo "  ✅ Successfully disabled ArgoCD automated sync for application $ARGOCD_APP_NAME"
     return 0
   else
     # Alternative: set automated to null
-    if oc patch application "$ARGOCD_APP_NAME" -n "$app_namespace" --type=merge -p='{"spec":{"syncPolicy":{"automated":null}}}' 2>/dev/null; then
+    if oc patch applications.argoproj.io "$ARGOCD_APP_NAME" -n "$app_namespace" --type=merge -p='{"spec":{"syncPolicy":{"automated":null}}}' 2>/dev/null; then
       echo "  ✅ Successfully disabled ArgoCD automated sync for application $ARGOCD_APP_NAME"
       return 0
     else

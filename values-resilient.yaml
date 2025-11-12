@@ -103,11 +103,8 @@ clusterGroup:
       name: odf
       namespace: openshift-storage
       project: resilient
-      repoURL: https://github.com/mhjacks/openshift-data-foundations-chart.git
-      chartVersion: exclude_infra_nodes_by_default
-      path: "."
-      #chart: openshift-data-foundations
-      #chartVersion: 0.2.*
+      chart: openshift-data-foundations
+      chartVersion: 0.2.*
       extraValueFiles:
         - '$patternref/overrides/values-odf-chart.yaml'
 

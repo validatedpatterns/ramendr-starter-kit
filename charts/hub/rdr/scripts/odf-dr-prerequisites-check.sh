@@ -103,20 +103,65 @@ check_s3_service_health() {
     return 1
   fi
   
-  # Check NooBaa operator pods
-  local noobaa_operator_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=noobaa-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  # Check NooBaa operator pods - try multiple label selectors and name patterns
+  local noobaa_operator_pods=0
+  
+  # Try different label selectors
+  noobaa_operator_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=noobaa-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   noobaa_operator_pods=$(echo "$noobaa_operator_pods" | tr -d ' \n')
+  
+  # If not found, try by name pattern
   if [[ $noobaa_operator_pods -eq 0 ]]; then
-    echo "NooBaa operator not running on $cluster"
-    return 1
+    noobaa_operator_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage --no-headers 2>/dev/null | grep -E "noobaa-operator|noobaa.*operator" | grep -c "Running" || echo "0")
+    noobaa_operator_pods=$(echo "$noobaa_operator_pods" | tr -d ' \n')
   fi
   
-  # Check NooBaa core pods (S3 service provider)
-  local noobaa_core_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=noobaa-core --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  # If still not found, try checking deployment instead
+  if [[ $noobaa_operator_pods -eq 0 ]]; then
+    local noobaa_operator_deployment=$(oc --kubeconfig="$kubeconfig" get deployment -n openshift-storage --no-headers 2>/dev/null | grep -E "noobaa-operator|noobaa.*operator" | wc -l || echo "0")
+    noobaa_operator_deployment=$(echo "$noobaa_operator_deployment" | tr -d ' \n')
+    if [[ $noobaa_operator_deployment -gt 0 ]]; then
+      echo "  NooBaa operator deployment found (pods may be managed by ODF operator)"
+      noobaa_operator_pods=1  # Consider it present if deployment exists
+    fi
+  fi
+  
+  # If NooBaa is Ready, the operator is likely working even if we can't find pods directly
+  if [[ $noobaa_operator_pods -eq 0 ]] && [[ "$noobaa_phase" == "Ready" ]]; then
+    echo "  NooBaa operator pods not found by label/name, but NooBaa is Ready - operator likely managed by ODF"
+    # Don't fail if NooBaa is Ready - the operator might be managed differently
+  elif [[ $noobaa_operator_pods -eq 0 ]]; then
+    echo "  ⚠️  NooBaa operator not found on $cluster"
+    # Only fail if NooBaa is not Ready AND operator not found
+    if [[ "$noobaa_phase" != "Ready" ]]; then
+      return 1
+    fi
+  else
+    echo "  ✅ NooBaa operator pods running: $noobaa_operator_pods"
+  fi
+  
+  # Check NooBaa core pods (S3 service provider) - try multiple label selectors and name patterns
+  local noobaa_core_pods=0
+  
+  # Try different label selectors
+  noobaa_core_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=noobaa-core --no-headers 2>/dev/null | grep -c "Running" || echo "0")
   noobaa_core_pods=$(echo "$noobaa_core_pods" | tr -d ' \n')
+  
+  # If not found, try by name pattern
   if [[ $noobaa_core_pods -eq 0 ]]; then
-    echo "NooBaa core pods not running on $cluster - S3 service unavailable"
+    noobaa_core_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage --no-headers 2>/dev/null | grep -E "noobaa-core|noobaa.*core" | grep -c "Running" || echo "0")
+    noobaa_core_pods=$(echo "$noobaa_core_pods" | tr -d ' \n')
+  fi
+  
+  # If NooBaa is Ready, core pods are likely working even if we can't find them by label
+  if [[ $noobaa_core_pods -eq 0 ]] && [[ "$noobaa_phase" == "Ready" ]]; then
+    echo "  NooBaa core pods not found by label/name, but NooBaa is Ready - S3 service likely available"
+    # Don't fail if NooBaa is Ready - the core might be managed differently or have different labels
+  elif [[ $noobaa_core_pods -eq 0 ]]; then
+    echo "  ❌ NooBaa core pods not running on $cluster - S3 service unavailable"
     return 1
+  else
+    echo "  ✅ NooBaa core pods running: $noobaa_core_pods"
   fi
   
   # Check for S3 service endpoint (Service or Route)

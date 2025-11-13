@@ -64,8 +64,6 @@ clusterGroup:
       ignoreDifferences:
         - group: internal.open-cluster-management.io
           kind: ManagedClusterInfo
-          jsonPointers:
-            - /spec/loggingCA
 
     ensure-openshift-console-plugins:
       name: ensure-openshift-console-plugins

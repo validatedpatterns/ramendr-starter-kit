@@ -62,6 +62,113 @@ check_odf_health() {
   return 0
 }
 
+# Function to check S3 service health in openshift-storage namespace
+check_s3_service_health() {
+  local cluster="$1"
+  local kubeconfig="$2"
+  
+  echo "Checking S3 service health on $cluster..."
+  
+  # Check if openshift-storage namespace exists
+  if ! oc --kubeconfig="$kubeconfig" get namespace openshift-storage &>/dev/null; then
+    echo "openshift-storage namespace not found on $cluster"
+    return 1
+  fi
+  
+  # Check for NooBaa (Object Storage) - this provides S3 service
+  # Check if NooBaa CRD exists
+  if ! oc --kubeconfig="$kubeconfig" get crd noobaas.noobaa.io &>/dev/null; then
+    echo "NooBaa CRD not found on $cluster - S3 service may not be available"
+    return 1
+  fi
+  
+  # Check if NooBaa system exists and is healthy
+  local noobaa_system=$(oc --kubeconfig="$kubeconfig" get noobaa -n openshift-storage -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+  
+  if [[ -z "$noobaa_system" ]]; then
+    echo "NooBaa system not found in openshift-storage namespace on $cluster"
+    return 1
+  fi
+  
+  # Check NooBaa system status/phase
+  local noobaa_phase=$(oc --kubeconfig="$kubeconfig" get noobaa "$noobaa_system" -n openshift-storage -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+  local noobaa_ready=$(oc --kubeconfig="$kubeconfig" get noobaa "$noobaa_system" -n openshift-storage -o jsonpath='{.status.ready}' 2>/dev/null || echo "false")
+  
+  echo "  NooBaa system: $noobaa_system"
+  echo "  NooBaa phase: $noobaa_phase"
+  echo "  NooBaa ready: $noobaa_ready"
+  
+  if [[ "$noobaa_phase" != "Ready" ]] && [[ "$noobaa_ready" != "true" ]]; then
+    echo "NooBaa system is not ready on $cluster (phase: $noobaa_phase, ready: $noobaa_ready)"
+    return 1
+  fi
+  
+  # Check NooBaa operator pods
+  local noobaa_operator_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=noobaa-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  noobaa_operator_pods=$(echo "$noobaa_operator_pods" | tr -d ' \n')
+  if [[ $noobaa_operator_pods -eq 0 ]]; then
+    echo "NooBaa operator not running on $cluster"
+    return 1
+  fi
+  
+  # Check NooBaa core pods (S3 service provider)
+  local noobaa_core_pods=$(oc --kubeconfig="$kubeconfig" get pods -n openshift-storage -l app=noobaa-core --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+  noobaa_core_pods=$(echo "$noobaa_core_pods" | tr -d ' \n')
+  if [[ $noobaa_core_pods -eq 0 ]]; then
+    echo "NooBaa core pods not running on $cluster - S3 service unavailable"
+    return 1
+  fi
+  
+  # Check for S3 service endpoint (Service or Route)
+  local s3_service=$(oc --kubeconfig="$kubeconfig" get service -n openshift-storage -l app=noobaa --no-headers 2>/dev/null | head -1 | awk '{print $1}' || echo "")
+  
+  if [[ -z "$s3_service" ]]; then
+    # Try alternative service names
+    s3_service=$(oc --kubeconfig="$kubeconfig" get service -n openshift-storage | grep -i s3 | head -1 | awk '{print $1}' || echo "")
+  fi
+  
+  if [[ -n "$s3_service" ]]; then
+    echo "  S3 service found: $s3_service"
+    # Check if service has endpoints
+    local service_endpoints=$(oc --kubeconfig="$kubeconfig" get endpoints "$s3_service" -n openshift-storage -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+    if [[ -z "$service_endpoints" ]]; then
+      echo "  ⚠️  S3 service $s3_service has no endpoints"
+      return 1
+    else
+      echo "  ✅ S3 service $s3_service has endpoints"
+    fi
+  else
+    echo "  ⚠️  S3 service not found by name, but NooBaa is running"
+    # Don't fail if NooBaa is healthy - the service might be created differently
+  fi
+  
+  # Check NooBaa status conditions for health
+  local noobaa_conditions=$(oc --kubeconfig="$kubeconfig" get noobaa "$noobaa_system" -n openshift-storage -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}' 2>/dev/null || echo "")
+  
+  if [[ -n "$noobaa_conditions" ]]; then
+    local has_error=false
+    while IFS='=' read -r type status; do
+      if [[ -n "$type" && -n "$status" ]]; then
+        if [[ "$status" == "False" ]] || [[ "$status" == "Unknown" ]]; then
+          echo "  ⚠️  NooBaa condition $type is $status"
+          # Don't fail immediately - check if it's a critical condition
+          if [[ "$type" == *"Available"* ]] || [[ "$type" == *"Ready"* ]]; then
+            has_error=true
+          fi
+        fi
+      fi
+    done <<< "$noobaa_conditions"
+    
+    if [[ "$has_error" == "true" ]]; then
+      echo "NooBaa has critical error conditions on $cluster"
+      return 1
+    fi
+  fi
+  
+  echo "✅ S3 service is healthy on $cluster"
+  return 0
+}
+
 # Function to check CA configuration
 check_ca_configuration() {
   local cluster="$1"
@@ -295,6 +402,19 @@ while true; do
         all_checks_passed=false
       fi
       
+      # Check S3 service health on all clusters
+      if ! check_s3_service_health "$HUB_CLUSTER" "$KUBECONFIG_DIR/${HUB_CLUSTER}-kubeconfig.yaml"; then
+        all_checks_passed=false
+      fi
+      
+      if ! check_s3_service_health "$PRIMARY_CLUSTER" "$KUBECONFIG_DIR/${PRIMARY_CLUSTER}-kubeconfig.yaml"; then
+        all_checks_passed=false
+      fi
+      
+      if ! check_s3_service_health "$SECONDARY_CLUSTER" "$KUBECONFIG_DIR/${SECONDARY_CLUSTER}-kubeconfig.yaml"; then
+        all_checks_passed=false
+      fi
+      
       # Check CA configuration on individual clusters
       if ! check_ca_configuration "$HUB_CLUSTER" "$KUBECONFIG_DIR/${HUB_CLUSTER}-kubeconfig.yaml"; then
         all_checks_passed=false
@@ -328,8 +448,9 @@ while true; do
   echo "🔄 Continuing to retry until all prerequisites are met..."
   echo "Please ensure:"
   echo "1. ODF is installed and healthy on both managed clusters"
-  echo "2. CA certificates are properly configured on all three clusters (hub, primary, secondary)"
-  echo "3. All clusters have identical CA bundles containing certificates from all three clusters"
+  echo "2. S3 service is healthy in openshift-storage namespace on all clusters (hub, primary, secondary)"
+  echo "3. CA certificates are properly configured on all three clusters (hub, primary, secondary)"
+  echo "4. All clusters have identical CA bundles containing certificates from all three clusters"
   echo ""
   echo "🔄 Restarting ODF DR prerequisites check..."
   # Reset attempt counter and continue

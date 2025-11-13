@@ -51,6 +51,13 @@ rules:
 - apiGroups: ["apps"]
   resources: ["deployments"]
   verbs: ["get", "list"]
+# Permissions for checking S3 service (NooBaa) health
+- apiGroups: ["noobaa.io"]
+  resources: ["noobaas"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["services", "endpoints", "namespaces"]
+  verbs: ["get", "list"]
 # Permissions for checking CRDs
 - apiGroups: ["apiextensions.k8s.io"]
   resources: ["customresourcedefinitions"]

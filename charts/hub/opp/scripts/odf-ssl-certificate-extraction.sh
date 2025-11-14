@@ -453,7 +453,16 @@ if oc get configmap ramen-hub-operator-config -n openshift-operators &>/dev/null
   # CRITICAL: Verify at least 2 S3profiles exist before attempting update
   MIN_REQUIRED_PROFILES=2
   if [[ -n "$EXISTING_YAML" ]]; then
-    EXISTING_PROFILE_COUNT=$(echo "$EXISTING_YAML" | grep -c "^- name:" 2>/dev/null || echo "0")
+    # Use yq to properly parse YAML and count profiles
+    if command -v yq &>/dev/null; then
+      EXISTING_PROFILE_COUNT=$(echo "$EXISTING_YAML" | yq eval '.s3StoreProfiles | length' 2>/dev/null || echo "0")
+    else
+      # Fallback to grep if yq is not available
+      EXISTING_PROFILE_COUNT=$(echo "$EXISTING_YAML" | grep -c "s3ProfileName:" 2>/dev/null || echo "0")
+      if [[ $EXISTING_PROFILE_COUNT -eq 0 ]]; then
+        EXISTING_PROFILE_COUNT=$(echo "$EXISTING_YAML" | grep -c "s3Bucket:" 2>/dev/null || echo "0")
+      fi
+    fi
     EXISTING_PROFILE_COUNT=$(echo "$EXISTING_PROFILE_COUNT" | tr -d ' \n\r' | grep -E '^[0-9]+$' || echo "0")
     EXISTING_PROFILE_COUNT=$((10#$EXISTING_PROFILE_COUNT))
     if [[ $EXISTING_PROFILE_COUNT -lt $MIN_REQUIRED_PROFILES ]]; then
@@ -758,9 +767,19 @@ with open('$WORK_DIR/ramen-configmap-updated.yaml', 'w') as f:
     # CRITICAL: Must find at least 2 S3profiles
     MIN_REQUIRED_PROFILES=2
     if echo "$VERIFIED_YAML" | grep -q "s3StoreProfiles"; then
-      # Count profiles and verify each has caCertificates
-      PROFILE_COUNT=$(echo "$VERIFIED_YAML" | grep -c "^- name:" 2>/dev/null || echo "0")
-      CA_CERT_COUNT=$(echo "$VERIFIED_YAML" | grep -c "caCertificates:" 2>/dev/null || echo "0")
+      # Use yq to properly parse YAML and count profiles
+      if command -v yq &>/dev/null; then
+        PROFILE_COUNT=$(echo "$VERIFIED_YAML" | yq eval '.s3StoreProfiles | length' 2>/dev/null || echo "0")
+        # Count profiles that have caCertificates field
+        CA_CERT_COUNT=$(echo "$VERIFIED_YAML" | yq eval '[.s3StoreProfiles[] | select(has("caCertificates"))] | length' 2>/dev/null || echo "0")
+      else
+        # Fallback to grep if yq is not available
+        PROFILE_COUNT=$(echo "$VERIFIED_YAML" | grep -c "s3ProfileName:" 2>/dev/null || echo "0")
+        if [[ $PROFILE_COUNT -eq 0 ]]; then
+          PROFILE_COUNT=$(echo "$VERIFIED_YAML" | grep -c "s3Bucket:" 2>/dev/null || echo "0")
+        fi
+        CA_CERT_COUNT=$(echo "$VERIFIED_YAML" | grep -c "caCertificates:" 2>/dev/null || echo "0")
+      fi
       PROFILE_COUNT=$(echo "$PROFILE_COUNT" | tr -d ' \n\r' | grep -E '^[0-9]+$' || echo "0")
       CA_CERT_COUNT=$(echo "$CA_CERT_COUNT" | tr -d ' \n\r' | grep -E '^[0-9]+$' || echo "0")
       PROFILE_COUNT=$((10#$PROFILE_COUNT))
@@ -880,8 +899,19 @@ with open('$WORK_DIR/ramen-patch.json', 'w') as f:
             # CRITICAL: Must find at least 2 S3profiles
             MIN_REQUIRED_PROFILES=2
             if echo "$VERIFIED_YAML" | grep -q "s3StoreProfiles"; then
-              PROFILE_COUNT=$(echo "$VERIFIED_YAML" | grep -c "^- name:" 2>/dev/null || echo "0")
-              CA_CERT_COUNT=$(echo "$VERIFIED_YAML" | grep -c "caCertificates:" 2>/dev/null || echo "0")
+              # Use yq to properly parse YAML and count profiles
+              if command -v yq &>/dev/null; then
+                PROFILE_COUNT=$(echo "$VERIFIED_YAML" | yq eval '.s3StoreProfiles | length' 2>/dev/null || echo "0")
+                # Count profiles that have caCertificates field
+                CA_CERT_COUNT=$(echo "$VERIFIED_YAML" | yq eval '[.s3StoreProfiles[] | select(has("caCertificates"))] | length' 2>/dev/null || echo "0")
+              else
+                # Fallback to grep if yq is not available
+                PROFILE_COUNT=$(echo "$VERIFIED_YAML" | grep -c "s3ProfileName:" 2>/dev/null || echo "0")
+                if [[ $PROFILE_COUNT -eq 0 ]]; then
+                  PROFILE_COUNT=$(echo "$VERIFIED_YAML" | grep -c "s3Bucket:" 2>/dev/null || echo "0")
+                fi
+                CA_CERT_COUNT=$(echo "$VERIFIED_YAML" | grep -c "caCertificates:" 2>/dev/null || echo "0")
+              fi
               PROFILE_COUNT=$(echo "$PROFILE_COUNT" | tr -d ' \n\r' | grep -E '^[0-9]+$' || echo "0")
               CA_CERT_COUNT=$(echo "$CA_CERT_COUNT" | tr -d ' \n\r' | grep -E '^[0-9]+$' || echo "0")
               PROFILE_COUNT=$((10#$PROFILE_COUNT))
@@ -1209,9 +1239,19 @@ fi
 # CRITICAL: Must find at least 2 S3profiles
 MIN_REQUIRED_PROFILES=2
 if echo "$FINAL_VERIFIED_YAML" | grep -q "s3StoreProfiles"; then
-  # Count profiles - ensure we get a numeric value
-  FINAL_PROFILE_COUNT=$(echo "$FINAL_VERIFIED_YAML" | grep -c "^- name:" 2>/dev/null || echo "0")
-  FINAL_CA_CERT_COUNT=$(echo "$FINAL_VERIFIED_YAML" | grep -c "caCertificates:" 2>/dev/null || echo "0")
+  # Use yq to properly parse YAML and count profiles
+  if command -v yq &>/dev/null; then
+    FINAL_PROFILE_COUNT=$(echo "$FINAL_VERIFIED_YAML" | yq eval '.s3StoreProfiles | length' 2>/dev/null || echo "0")
+    # Count profiles that have caCertificates field
+    FINAL_CA_CERT_COUNT=$(echo "$FINAL_VERIFIED_YAML" | yq eval '[.s3StoreProfiles[] | select(has("caCertificates"))] | length' 2>/dev/null || echo "0")
+  else
+    # Fallback to grep if yq is not available
+    FINAL_PROFILE_COUNT=$(echo "$FINAL_VERIFIED_YAML" | grep -c "s3ProfileName:" 2>/dev/null || echo "0")
+    if [[ $FINAL_PROFILE_COUNT -eq 0 ]]; then
+      FINAL_PROFILE_COUNT=$(echo "$FINAL_VERIFIED_YAML" | grep -c "s3Bucket:" 2>/dev/null || echo "0")
+    fi
+    FINAL_CA_CERT_COUNT=$(echo "$FINAL_VERIFIED_YAML" | grep -c "caCertificates:" 2>/dev/null || echo "0")
+  fi
   
   # Remove any whitespace/newlines and ensure numeric
   FINAL_PROFILE_COUNT=$(echo "$FINAL_PROFILE_COUNT" | tr -d ' \n\r' | grep -E '^[0-9]+$' || echo "0")

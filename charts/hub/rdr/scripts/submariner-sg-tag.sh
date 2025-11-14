@@ -434,12 +434,16 @@ FAILED_CLUSTERS=()
 
 # Process each managed cluster
 CLUSTER_NUM=0
-TOTAL_CLUSTERS=$(echo "$MANAGED_CLUSTERS" | wc -w)
+TOTAL_CLUSTERS=$(echo "$MANAGED_CLUSTERS" | wc -w | tr -d '[:space:]')
+echo "Total clusters to process: $TOTAL_CLUSTERS"
+echo ""
+
 for cluster in $MANAGED_CLUSTERS; do
   CLUSTER_NUM=$((CLUSTER_NUM + 1))
   echo "=========================================="
   echo "Processing cluster $CLUSTER_NUM of $TOTAL_CLUSTERS: $cluster"
   echo "=========================================="
+  echo "DEBUG: Starting iteration for cluster: $cluster"
   
   # Download kubeconfig (using same method as download-kubeconfigs.sh)
   # Note: download_kubeconfig sends debug messages to stderr, so only the path is captured to stdout
@@ -483,11 +487,17 @@ for cluster in $MANAGED_CLUSTERS; do
   echo "  ✅ Retrieved infrastructure name: $infra_name"
   
   # Get AWS credentials (need kubeconfig for region detection)
+  # Unset any existing AWS credentials first to avoid conflicts
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+  
+  set +e  # Temporarily disable exit on error for AWS credentials
   if ! get_aws_credentials "$cluster" "$kubeconfig"; then
     echo "❌ Failed to get AWS credentials for $cluster, skipping..."
     FAILED_CLUSTERS+=("$cluster")
+    set -e
     continue
   fi
+  set -e  # Re-enable exit on error
   
   # Find Submariner security group
   sg_id=$(find_submariner_security_group "$cluster" "$infra_name" || echo "")
@@ -498,16 +508,32 @@ for cluster in $MANAGED_CLUSTERS; do
   fi
   
   # Tag security group
+  set +e  # Temporarily disable exit on error for tagging
+  tag_result=0
   if tag_security_group "$cluster" "$infra_name" "$sg_id"; then
     echo "✅ Successfully processed cluster $cluster"
-    ((SUCCESS_COUNT++))
+    set +e  # Disable exit on error for arithmetic
+    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+    set -e
+    tag_result=0
   else
     echo "❌ Failed to tag security group for $cluster"
     FAILED_CLUSTERS+=("$cluster")
+    tag_result=1
   fi
+  set -e  # Re-enable exit on error
   
   echo ""
+  echo "Completed processing cluster $cluster (result: $tag_result, success count: $SUCCESS_COUNT)"
+  echo "DEBUG: Finished iteration for cluster: $cluster, continuing to next cluster..."
+  echo ""
 done
+
+echo "DEBUG: Exited the for loop. Processed $CLUSTER_NUM clusters."
+
+echo "=========================================="
+echo "Finished processing all clusters. Loop completed."
+echo "=========================================="
 
 # Summary
 echo "=========================================="

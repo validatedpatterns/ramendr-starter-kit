@@ -21,6 +21,7 @@ vmDefaults:
   cloudinitsecret: secret/data/global/cloud-init
   sshpubkeyfield: publickey
   publishService: true
+  serviceType: LoadBalancer
   extraLabels:
     drprotection: true
   # extraLabels is available for default extra labels to add to the virtualmachine
@@ -35,4 +36,3 @@ vms:
   edgenode:
     count: 4
     role: node
-

@@ -1,0 +1,4 @@
+---
+dns:
+  fqdnTemplate:
+    - '{{.Name}}.resilient.aws.validatedpatterns.io'

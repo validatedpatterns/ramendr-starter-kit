@@ -127,7 +127,9 @@ clusterGroup:
       repoURL: https://github.com/validatedpatterns/external-dns-operator-chart.git
       path: "."
       chartVersion: fqdn_template_value
-    
+      extraValueFiles:
+        - '$patternref/overrides/values-resilient-external-dns.yaml'
+
     adp-data-protection:
       name: adp-data-protection-application
       namespace: openshift-adp

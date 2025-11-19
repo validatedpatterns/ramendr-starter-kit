@@ -1,4 +1,5 @@
-elusterGroup:
+---
+clusterGroup:
   name: hub
   isHubCluster: true
   namespaces:

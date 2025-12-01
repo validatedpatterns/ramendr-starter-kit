@@ -10,7 +10,7 @@ regionalDR:
           apiVersion: v1
           metadata:
             name: ocp-primary
-          baseDomain: aws.validatedpatterns.io
+          baseDomain: example.com
           controlPlane:
             name: master
             replicas: 3
@@ -48,7 +48,7 @@ regionalDR:
           apiVersion: v1
           metadata:
             name: ocp-secondary
-          baseDomain: aws.validatedpatterns.io
+          baseDomain: example.com
           controlPlane:
             name: master
             replicas: 3

@@ -104,6 +104,8 @@ data:
   install-config.yaml: {{ tpl $install_config $ | b64enc }}
 
 ---
+{{- $domainLabels := splitList "." (tpl $cluster.install_config.baseDomain $) }}
+{{- $baseDomain := join "." (slice $domainLabels 1) }}
 apiVersion: hive.openshift.io/v1
 kind: ClusterDeployment
 metadata:
@@ -116,7 +118,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  baseDomain: {{ tpl $cluster.install_config.baseDomain $ }}
+  baseDomain: {{ $baseDomain }}
   clusterName: {{ $cluster.name }}
   installAttemptsLimit: 1
   platform:

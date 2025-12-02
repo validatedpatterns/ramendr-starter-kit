@@ -126,20 +126,6 @@ clusterGroup:
         # These resources are created by OCM operators and should never be pruned
         - group: internal.open-cluster-management.io
           kind: ManagedClusterInfo
-#        - group: addon.open-cluster-management.io
-#          kind: ManagedClusterAddOn
-#        - group: addon.open-cluster-management.io
-#          kind: ClusterManagementAddOn
-#        - group: cluster.open-cluster-management.io
-#          kind: ManagedClusterSet
-#        - group: cluster.open-cluster-management.io
-#          kind: ManagedClusterSetBinding
-#        - group: cluster.open-cluster-management.io
-#          kind: PlacementDecision
-#        - group: work.open-cluster-management.io
-#          kind: ManifestWork
-#        - group: work.open-cluster-management.io
-#          kind: AppliedManifestWork
 
     vault:
       name: vault

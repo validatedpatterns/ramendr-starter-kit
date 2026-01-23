@@ -74,6 +74,8 @@ regionalDR:
               platform:
                 aws:
                   type: m5.metal
+                  zones:
+                    - eu-central-1a
           networking:
             clusterNetwork:
               - cidr: 10.132.0.0/14
@@ -85,7 +87,7 @@ regionalDR:
               - 172.20.0.0/16
           platform:
             aws:
-              region: us-west-1
+              region: eu-central-1
               userTags:
                 project: ValidatedPatterns
           publish: External
@@ -112,6 +114,8 @@ regionalDR:
               platform:
                 aws:
                   type: m5.metal
+                  zones:
+                    - eu-west-3a
           networking:
             clusterNetwork:
               - cidr: 10.136.0.0/14
@@ -123,7 +127,7 @@ regionalDR:
               - 172.21.0.0/16
           platform:
             aws:
-              region: us-east-1
+              region: eu-west-3
               userTags:
                 project: ValidatedPatterns
           publish: External

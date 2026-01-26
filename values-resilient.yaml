@@ -49,7 +49,7 @@ clusterGroup:
     openshift-oadp:
       name: redhat-oadp-operator
       namespace: openshift-adp
-      channel: stable-1.4
+      channel: stable
 
   projects:
     - resilient

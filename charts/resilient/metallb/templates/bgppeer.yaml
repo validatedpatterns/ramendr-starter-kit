@@ -1,0 +1,16 @@
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: sample
+  namespace: metallb-system
+spec:
+  myASN: {{ .Values.metallb.myASN }}
+  peerASN: {{ .Values.metallb.peerASN }}
+  peerAddress: {{ .Values.metallb.peerAddress }}
+{{- if .Values.metallb.bfd.enabled }}
+  bfdProfile: testbfdprofile
+{{- end }}
+  nodeSelectors:
+    - matchLabels:
+        node-role.kubernetes.io/worker: ""
+  ebgpMultiHop: false

@@ -20,6 +20,9 @@ clusterGroup:
     - openshift-workload-availability:
         operatorGroup: true
         targetNamespaces:
+    - metallb-system:
+        operatorGroup: true
+        targetNamespaces: []
 
   subscriptions:
     openshift-virtualization:
@@ -49,6 +52,11 @@ clusterGroup:
     openshift-oadp:
       name: redhat-oadp-operator
       namespace: openshift-adp
+      channel: stable
+
+    metallb:
+      name: metallb-operator
+      namespace: metallb-system
       channel: stable
 
   projects:
@@ -130,5 +138,18 @@ clusterGroup:
       namespace: openshift-adp
       project: resilient
       path: charts/resilient/data-protection-application
+
+    metallb:
+      name: metallb
+      namespace: metallb-system
+      project: resilient
+      path: charts/resilient/metallb
+      overrides:
+      - name: metallb.myASN
+        value: 65002
+      - name: metallb.peerASN
+        value: 64002
+      - name: metallb.peerAddress
+        value: 10.1.31.254
 
   managedClusterGroups: []

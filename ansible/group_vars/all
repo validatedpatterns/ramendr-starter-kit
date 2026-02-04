@@ -1,0 +1,125 @@
+---
+aws_profile: "default"
+
+aws_ami_owner: 309956199498
+aws_ami_name: "RHEL-10*"
+aws_ami_arch: "x86_64"
+
+aws_default_tags:
+  pattern: ingress
+
+aws_default_az: ""
+
+ssh_pubkey: "{{ lookup('file', '~/.ssh/id_rsa.pub' | expanduser) }}"
+wait_for_ssh_timeout: 600
+
+hosted_zone: aws.validatedpatterns.io.
+
+acm_import_clustergroup_label: east
+
+metallb_openshift_asn:
+  west: 65001
+  east: 65002
+metallb_address_pool: 192.168.155.0/24
+metallb_bfd_enable: true
+
+ec2_vpcs:
+  coreclient:
+    # 192.168.8.1 - 192.168.11.254
+    cidr: "192.168.8.0/22"
+    subnet_cidr: "192.168.8.0/24"
+
+  corewest:
+    # 192.168.12.1 - 192.168.15.254
+    cidr: "192.168.12.0/22"
+    subnet_cidr: "192.168.12.0/24"
+
+  coreeast:
+    # 192.168.16.1 - 192.168.19.254
+    cidr: "192.168.16.0/22"
+    subnet_cidr: "192.168.16.0/24"
+
+ec2_vms:
+  client:
+    vpc: coreclient
+    private_ip: 192.168.8.10
+    type: t2.micro
+    extra_nics: []
+
+  core:
+    vpc: coreclient
+    private_ip: 192.168.8.100
+    type: t2.small
+    inventory_groups:
+      - frr
+    extra_nics:
+      - vpc: corewest
+        ip: 192.168.12.200
+        metric: 101
+
+      - vpc: coreeast
+        ip: 192.168.16.200
+        metric: 101
+
+  westtor:
+    vpc: corewest
+    private_ip: 192.168.12.100
+    type: t2.micro
+    extra_nics: []
+    inventory_groups:
+      - frr
+
+  easttor:
+    vpc: coreeast
+    private_ip: 192.168.16.100
+    type: t2.micro
+    extra_nics: []
+    inventory_groups:
+      - frr
+
+ec2_frrs:
+  core:
+    asn: 64666
+    private_ip: 192.168.8.100
+    connections:
+      towest:
+        remote_ips: 
+          - 192.168.12.100
+        local_ip: 192.168.12.200
+        asn: 64001
+
+      toeast:
+        remote_ips: 
+          - 192.168.16.100
+        local_ip: 192.168.16.200
+        asn: 64002
+
+    fixed_advertisements:
+      - 192.168.8.0/24
+
+  westtor:
+    asn: 64001
+    private_ip: 192.168.12.100
+    connections:
+      tocore:
+        remote_ips: 
+          - 192.168.12.200
+        local_ip: 192.168.12.100
+        asn: 64666
+      # We will extend this list dynamically with the ocp workers ips-asn
+    fixed_advertisements: []
+
+  easttor:
+    asn: 64002
+    private_ip: 192.168.16.100
+    connections:
+      tocore:
+        remote_ips: 
+          - 192.168.16.200
+        local_ip: 192.168.16.100
+        asn: 64666
+      # We will extend this list dynamically with the ocp workers ips-asn
+    fixed_advertisements: []
+
+
+# allow_different_regions: true

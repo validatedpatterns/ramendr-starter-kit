@@ -3,3 +3,20 @@
 # You can add custom targets above or below the include line
 
 include Makefile-common
+
+export WESTCONFIG=$(PWD)/ocp-primary.yaml
+export EASTCONFIG=$(PWD)/ocp-secondary.yaml
+
+##@ AWS Infrastructure tasks
+.PHONY: download-kubeconfigs
+download-kubeconfigs: ## Downloads the kubeconfig for the 2 managedcluster
+	./scripts/download-kubeconfigs.sh
+
+.PHONY: bgp-routing
+bgp-routing:  download-kubeconfigs ## Sets up the BGP routing with a client ec2 in aws
+	cd ansible && ansible-playbook -i hosts $(EXTRA_ARGS) $(EXTRA_VARS) playbooks/router.yml
+
+
+.PHONY: bgp-routing-cleanup
+bgp-routing-cleanup: ## Cleans up the BGP routing with a client ec2 in aws
+	cd ansible && ansible-playbook -i hosts $(EXTRA_ARGS) $(EXTRA_VARS) playbooks/router-cleanup.yml

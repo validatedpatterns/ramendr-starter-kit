@@ -1,0 +1,68 @@
+- name: Launch EC2 Instance {{ instance.key }}-vm
+  amazon.aws.ec2_instance:
+    name: "{{ instance.key }}-vm"
+    instance_type: "{{ instance.value.type }}"
+    image_id: "{{ ec2_ami_image_id }}"
+    key_name: "{{ ec2_ssh_key_name }}"
+    user_data: "{{ lookup('template', '../templates/cloud_init_userdata.j2') | b64encode }}"
+    vpc_subnet_id: "{{ ec2_vpcs[instance.value.vpc].subnet_id }}"
+    security_group: "{{ ec2_vpcs[instance.value.vpc].security_group_id }}"
+    source_dest_check: false
+    network:
+      assign_public_ip: true
+      private_ip_address: "{{ instance.value.private_ip }}"
+    state: started
+    wait: true
+    tags: "{{ current_tags | combine({ 'Name': instance.key + '-vm' }) }}"
+    region: "{{ aws_region }}"
+    profile: "{{ aws_profile }}"
+  register: ec2_info
+
+- name: Extend ec2_vms instance facts for {{ instance.key }}-vm
+  ansible.builtin.set_fact:
+    ec2_vms: >-
+      {{
+        ec2_vms | combine({
+          instance.key: instance.value | combine({
+            'public_ip': ec2_info.instances[0].public_ip_address,
+            'private_ip': ec2_info.instances[0].private_ip_address,
+            'instance_id': ec2_info.instances[0].instance_id 
+          })
+        }, recursive=True)
+      }}
+
+- name: Wait for SSH to be available
+  ansible.builtin.wait_for:
+    host: "{{ ec2_vms[instance.key].public_ip }}"
+    port: 22
+    timeout: "{{ wait_for_ssh_timeout }}"
+    state: started
+
+- name: Add new host to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ instance.key }}"
+    ansible_host: "{{ ec2_vms[instance.key].public_ip }}"
+    groups: "{{ instance.value.vpc | list + instance.value.inventory_groups | default([]) }}"
+    ansible_user: ec2-user
+
+- name: Set hostname {{ instance.key }}
+  become: true
+  delegate_to: "{{ instance.key }}"
+  ansible.builtin.hostname:
+    name: "{{ instance.key }}"
+    use: systemd
+
+- name: Add extra nics for {{ instance.key }}
+  ansible.builtin.include_tasks: create_nic.yml
+  when: instance.value.extra_nics | length > 0
+  loop: "{{ instance.value.extra_nics }}"
+  loop_control:
+    loop_var: nic
+    label: "{{ nic.vpc }} - {{ nic.ip }}"
+    extended: true
+
+- name: Enforce rp_filter on all new nics
+  become: true
+  delegate_to: "{{ instance.key }}"
+  ansible.builtin.shell: |
+    for i in /proc/sys/net/ipv4/conf/*/rp_filter; do echo 0 > $i; done

@@ -1,0 +1,21 @@
+# Fetches the AMI image id, prints it and returns it as the "ec2_ami_image_id"
+# fact. This AMI is used across all EC2 instances
+
+- name: Get ami image
+  ansible.builtin.shell: |
+    aws --profile {{ aws_profile }} ec2 describe-images \
+    --owners {{ aws_ami_owner }} \
+    --filters "Name=name,Values={{ aws_ami_name }}*" "Name=state,Values=available" "Name=architecture,Values={{ aws_ami_arch }}" \
+    --region {{ aws_region }} \
+    --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
+    --output text
+  register: ec2_ami_image_id_raw
+  changed_when: false
+
+- name: Set ami image fact
+  ansible.builtin.set_fact:
+    ec2_ami_image_id: "{{ ec2_ami_image_id_raw.stdout }}"
+
+- name: Print ami image use
+  ansible.builtin.debug:
+    msg: "Using AMI image: {{ ec2_ami_image_id }}"

@@ -1,0 +1,76 @@
+- name: Create VPC {{ instance.key }}-vpc
+  amazon.aws.ec2_vpc_net:
+    name: "{{ instance.key }}-vpc"
+    cidr_block: "{{ instance.value.cidr }}"
+    tags: "{{ current_tags | combine({ 'Name': instance.key + '-vpc'}) }}"
+    region: "{{ aws_region }}"
+    profile: "{{ aws_profile }}"
+  register: vpc_result
+
+- name: Create Internet Gateway {{ instance.key }}-igw
+  amazon.aws.ec2_vpc_igw:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    tags: "{{ current_tags | combine({ 'Name': instance.key + '-igw' }) }}"
+    region: "{{ aws_region }}"
+    profile: "{{ aws_profile }}"
+  register: igw_result
+
+- name: Create Subnet {{ instance.key }}-net
+  amazon.aws.ec2_vpc_subnet:
+    az: "{{ aws_az }}"
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    cidr: "{{ instance.value.subnet_cidr }}"
+    map_public: true
+    tags: "{{ current_tags | combine({ 'Name': instance.key + '-net' }) }}"
+    region: "{{ aws_region }}"
+    profile: "{{ aws_profile }}"
+  register: subnet_result
+
+- name: Create and Associate Route Table {{ instance.key }}-rtbl
+  amazon.aws.ec2_vpc_route_table:
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    subnets:
+      - "{{ subnet_result.subnet.id }}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{ igw_result.gateway_id }}"
+    tags: "{{ current_tags | combine({ 'Name': instance.key + '-rtbl' }) }}"
+    region: "{{ aws_region }}"
+    profile: "{{ aws_profile }}"
+  register: rtbl_result
+
+- name: Create Security Group {{ instance.key }}-sg
+  amazon.aws.ec2_security_group:
+    name: "{{ instance.key }}-sg"
+    description: "Allow SSH"
+    vpc_id: "{{ vpc_result.vpc.id }}"
+    rules:
+      - proto: tcp
+        ports: 22
+        cidr_ip: 0.0.0.0/0
+      - proto: all
+        cidr_ip: 10.0.0.0/8
+        rule_desc: All port from vpc
+      - proto: all
+        cidr_ip: 192.168.0.0/16 
+        rule_desc: Allow client-core-tors
+    tags: "{{ current_tags | combine({ 'Name': instance.key + '-sg' }) }}"
+    region: "{{ aws_region }}"
+    profile: "{{ aws_profile }}"
+  register: sg_result
+
+# FIXME(bandini): Is there really no better way to extend an existing (or even a new)
+# dictionary with new info??
+- name: Extend ec2_vpcs variable with newly create info
+  ansible.builtin.set_fact:
+    ec2_vpcs: >-
+      {{
+        ec2_vpcs | combine({
+          instance.key: instance.value | combine({ 
+            'vpc_id': vpc_result.vpc.id,
+            'route_table_id': rtbl_result.route_table.id,
+            'subnet_id': subnet_result.subnet.id,
+            'security_group_id': sg_result.group_id
+          })
+        }, recursive=True)
+      }}

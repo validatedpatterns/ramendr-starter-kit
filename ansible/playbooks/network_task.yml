@@ -1,0 +1,331 @@
+# This task assumes that it is invoked with the following loop:
+# loop:
+#   - { 
+#        name: "west",
+#        config: "{{ WESTCONFIG }}",
+#        cluster_name: "{{ west_cluster_name }}" 
+#        tor_vm: "westtor"
+#     } 
+#   - { 
+#        name: "east",
+#        config: "{{ EASTCONFIG }}",
+#        cluster_name: "{{ east_cluster_name }}" 
+#        tor_vm: "easttor"
+#     }
+# loop_control:
+#   loop_var: ocp
+- name: Fetch the config-v1 ConfigMap from kube-system
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    name: cluster-config-v1
+    namespace: kube-system
+    kubeconfig: "{{ ocp.config }}"
+  register: cluster_config_v1
+
+- name: Extract MachineNetwork CIDR
+  ansible.builtin.set_fact:
+    target_cidr: >-
+      {{ 
+        (cluster_config_v1.resources[0].data['install-config'] | from_yaml).networking.machineNetwork[0].cidr 
+      }}
+  when: cluster_config_v1.resources | length > 0
+
+- name: Show CIDR for "{{ ocp.name }}"
+  ansible.builtin.debug:
+    msg: "The Machine Network CIDR is: {{ target_cidr }}"
+
+- name: Get worker node ip list for "{{ ocp.name }}"
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    oc describe nodes -l node-role.kubernetes.io/worker | grep InternalIP: | awk '{ print $2 }'
+  environment:
+    KUBECONFIG: "{{ ocp.config }}"
+  register: worker_nodes
+
+- name: Get master node ip list for "{{ ocp.name }}"
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    oc describe nodes -l node-role.kubernetes.io/master | grep InternalIP: | awk '{ print $2 }'
+  environment:
+    KUBECONFIG: "{{ ocp.config }}"
+  register: master_nodes
+
+- name: Gather security group info for workers for "{{ ocp.name }}"
+  amazon.aws.ec2_security_group_info:
+    filters:
+      "tag:sigs.k8s.io/cluster-api-provider-aws/role": "node"
+      "tag:Name": "{{ ocp.cluster_name }}-*"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: ec2_security_group_info
+
+- name: Debug for "{{ ocp.name }} - {{ ocp.cluster_name }}"
+  ansible.builtin.debug:
+    msg: "ec2_security_group_info: {{ ec2_security_group_info }}"
+
+- name: Set vpc and sg id for "{{ ocp.name }}"
+  ansible.builtin.set_fact:
+    sg_vpc_id: "{{ ec2_security_group_info.security_groups[0].vpc_id }}"
+    sg_group_id: "{{ ec2_security_group_info.security_groups[0].group_id }}"
+    sg_group_name: "{{ ec2_security_group_info.security_groups[0].group_name }}"
+    sg_worker_description: "{{ ec2_security_group_info.security_groups[0].description }}"
+
+- name: Gather vpc subnet info for workers for "{{ ocp.name }}"
+  amazon.aws.ec2_vpc_subnet_info:
+    filters:
+      vpc-id: "{{ sg_vpc_id }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: ec2_vpc_subnet_info
+
+# only add the private subnet, and there will be only exactly one
+- name: Set private subnet id for "{{ ocp.name }}"
+  ansible.builtin.set_fact:
+    private_subnet_id: "{{ ec2_vpc_subnet_info.subnets | selectattr('map_public_ip_on_launch', '==', false) | selectattr('availability_zone', '==', aws_az) | map(attribute='subnet_id') | first }}"
+    private_subnet_cidr: "{{ ec2_vpc_subnet_info.subnets | selectattr('map_public_ip_on_launch', '==', false) | selectattr('availability_zone', '==', aws_az) | map(attribute='cidr_block') | first }}"
+
+- name: Print out the the private subnet for "{{ ocp.name }}
+  ansible.builtin.debug:
+    msg:
+      private_subnet_id: "{{ private_subnet_id }}"
+
+- name: Open up worker node security groups
+  amazon.aws.ec2_security_group:
+    name: "{{ sg_group_name }}"
+    description: "{{ sg_worker_description }}"
+    rules:
+      - proto: all
+        cidr_ip: "{{ target_cidr }}"
+        rule_desc: All port from vpc
+      - proto: all
+        cidr_ip: 192.168.0.0/16 
+        rule_desc: Allow client-core-tors
+    purge_rules: false
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+
+- name: Get NICs for a vpc
+  amazon.aws.ec2_eni_info:
+    filters:
+      vpc-id: "{{ sg_vpc_id }}"
+      interface-type: interface
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: ec2_eni_info
+
+# Modify the each worker node interface to disable source/dest check (needed
+# for the ip address not on the vpc)
+- name: Disable source/dest check on worker node NIC-s
+  amazon.aws.ec2_eni:
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+    source_dest_check: false
+    eni_id: "{{ item['id'] }}"
+  when: item['private_ip_address'] in worker_nodes.stdout_lines
+  loop: "{{ ec2_eni_info['network_interfaces'] }}"
+
+- name: Create ec2 security group
+  amazon.aws.ec2_security_group:
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+    name: "{{ ocp.tor_vm }}-{{ ocp.cluster_name }}-security-group"
+    description: sec group for client
+    tags: "{{ current_tags | combine({ 'Name': ocp.tor_vm + '-' + ocp.name + '-sg' }) }}"
+    vpc_id: "{{ sg_vpc_id }}"
+    rules:
+    - proto: all
+      cidr_ip: 192.168.0.0/16
+      rule_desc: All traffic from client core and tors
+    - proto: all
+      cidr_ip: "{{ target_cidr }}"
+      rule_desc: All port from vpc
+    - proto: tcp
+      from_port: 22
+      to_port: 22
+      cidr_ip: 0.0.0.0/0
+      rule_desc: allow ssh access from the internet
+
+- name: Get ENI in TOR {{ ocp.name }} subnet for {{ ocp.tor_vm }}
+  amazon.aws.ec2_eni_info:
+    filters:
+      attachment.instance-id: "{{ ec2_vms[ocp.tor_vm].instance_id }}"
+      subnet-id: "{{ private_subnet_id }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: ec2_eni_info_raw
+
+- name: Calculate last usable address in private_subnet
+  ansible.builtin.set_fact:
+    last_usable_address: "{{ private_subnet_cidr | ansible.utils.ipaddr('last_usable') }}"
+
+- name: Print last public address for subnet {{ private_subnet_id }}
+  ansible.builtin.debug:
+    msg: "{{ last_usable_address }}"
+
+- name: Assert that the ip won't clash with any worker ip
+  ansible.builtin.assert:
+    that:
+      - "last_usable_address not in worker_nodes.stdout_lines"
+      - "last_usable_address not in master_nodes.stdout_lines"
+    fail_msg: "{{ last_usable_address }} collided with {{ worker_nodes.stdout_lines }}"
+
+- name: Create ENI in TOR {{ ocp.tor_vm }} if it does not exists
+  amazon.aws.ec2_eni:
+    subnet_id: "{{ private_subnet_id }}"
+    security_groups: "{{ sg_group_id }}"
+    instance_id: "{{ ec2_vms[ocp.tor_vm].instance_id }}"
+    private_ip_address: "{{ last_usable_address }}"
+    device_index: 1
+    attached: true
+    tags: "{{ current_tags | combine({ 'Name': ocp.tor_vm + '-' + ocp.name + '-nic' }) }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: eni_created
+  when: ec2_eni_info_raw['network_interfaces'] | length == 0
+
+- name: Debug additional ENI interface id
+  ansible.builtin.debug:
+    msg: 
+      ec2_eni_info_raw: "{{ ec2_eni_info_raw }}"
+      eni_created: "{{ eni_created }}"
+      eni_id: "{{ eni_created.interface.id if (ec2_eni_info_raw['network_interfaces'] | length == 0) else ec2_eni_info_raw['network_interfaces'][0]['id'] }}"
+
+- name: Make sure we delete the ENI when we remove the ec2 VM
+  amazon.aws.ec2_eni:
+    eni_id: "{{ eni_id }}"
+    source_dest_check: false
+    delete_on_termination: true
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  vars:
+    eni_id: "{{ eni_created.interface.id if (ec2_eni_info_raw['network_interfaces'] | length == 0) else ec2_eni_info_raw['network_interfaces'][0]['id'] }}"
+  retries: 4
+  delay: 10
+
+- name: Wait for enX1
+  become: true
+  delegate_to: "{{ ocp.tor_vm }}"
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    python3 -c "import ipaddress, sys; iface = ipaddress.ip_interface(sys.argv[1]); \
+      print(iface.network.network_address + 1)" $(ip -o -4 addr show enX1 | awk '{print $4}')
+  retries: 5
+  delay: 3
+
+# FIXME(bandini): ideally we check the connection name before
+# We calculate the gateway as Network Address + 1. If google is to be 
+# believed that is always true on AWS. Some with the enX1 nic name
+- name: Drop second default route and add route to reach "{{ ocp.name }}" workers
+  become: true
+  delegate_to: "{{ ocp.tor_vm }}"
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    GW=$(python3 -c "import ipaddress, sys; iface = ipaddress.ip_interface(sys.argv[1]); \
+      print(iface.network.network_address + 1)" $(ip -o -4 addr show enX1 | awk '{print $4}'))
+    echo "Found GW: ${GW}"
+    nmcli c modify "Wired connection 1" ipv4.never-default yes
+    nmcli c modify "Wired connection 1" +ipv4.routes "{{ target_cidr }} ${GW}"
+    nmcli c up "Wired connection 1"
+
+- name: Gather Facts manually on {{ ocp.tor_vm }}
+  become: true
+  delegate_to: "{{ ocp.tor_vm }}"
+  delegate_facts: true
+  ansible.builtin.setup:
+
+- name: Set secondary NIC (towards workers) ip address fact
+  ansible.builtin.set_fact:
+    enx1_ip: "{{ hostvars[ocp.tor_vm]['ansible_enX1']['ipv4']['address']}}"
+    "{{ ocp.name }}_enx1_ip": "{{ hostvars[ocp.tor_vm]['ansible_enX1']['ipv4']['address']}}"
+
+- name: Create dynamic connection dictionary
+  ansible.builtin.set_fact:
+    new_connection: >-
+      {{
+        {
+          ocp.tor_vm: {
+            'connections': {
+              'to' ~ ocp.name: {
+                'asn': metallb_openshift_asn[ocp.name],
+                'local_ip': enx1_ip,
+                'remote_ips': worker_nodes.stdout_lines
+              }
+            }
+          }
+        }
+      }}
+
+- name: Add new connection info to ec2_frrs
+  ansible.builtin.set_fact:
+    ec2_frrs: "{{ ec2_frrs | combine(new_connection, recursive=True) }}"
+
+- name: Print updated ec2_frrs
+  ansible.builtin.debug:
+    msg: "{{ ec2_frrs }}"
+
+# Next three tasks tweak the route table towards the client network and the
+# core-west-east network in the ocp workers private subnet
+- name: Get route table for client ec2 private subnet
+  amazon.aws.ec2_vpc_route_table_info:
+    filters:
+      association.subnet-id: "{{ private_subnet_id }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: get_priv_route_tables_raw
+
+- name: Set up route table for client ec2 to ocp woker node instance
+  amazon.aws.ec2_vpc_route_table:
+    vpc_id: "{{ sg_vpc_id }}"
+    route_table_id: "{{ rtb_id }}"
+    lookup: id
+    purge_routes: false
+    routes:
+      - dest: "{{ ec2_vpcs['coreclient']['subnet_cidr'] }}"
+        network_interface_id: "{{ tor_to_ocp_eni_id }}"
+      - dest: "{{ ec2_vpcs[ocp.vpc]['subnet_cidr'] }}"
+        network_interface_id: "{{ tor_to_ocp_eni_id }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  vars:
+    rtb_id: "{{ get_priv_route_tables_raw['route_tables'] | map(attribute='route_table_id') | first }}"
+    tor_to_ocp_eni_id: "{{ eni_created.interface.id if (ec2_eni_info_raw['network_interfaces'] | length == 0) else ec2_eni_info_raw['network_interfaces'][0]['id'] }}"
+
+# Next two tasks tweak the route table of the west/east vpc
+- name: Get route table for vpc {{ ocp.vpc }}
+  amazon.aws.ec2_vpc_route_table_info:
+    filters:
+      association.subnet-id: "{{ ec2_vpcs[ocp.vpc]['subnet_id'] }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: get_vpc_route_table_raw
+
+- name: Get ENI in TOR {{ ocp.name }} tor-core subnet
+  amazon.aws.ec2_eni_info:
+    filters:
+      attachment.instance-id: "{{ ec2_vms[ocp.tor_vm]['instance_id'] }}"
+      subnet-id: "{{ ec2_vpcs[ocp.vpc]['subnet_id'] }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: tor_main_eni_raw
+
+- debug:
+    msg: "{{ tor_main_eni_raw }}"
+
+- debug:
+    msg: "{{ ec2_vpcs[ocp.vpc] }}"
+
+- name: Set up route table for vpc {{ ocp.vpc }}
+  amazon.aws.ec2_vpc_route_table:
+    vpc_id: "{{ ec2_vpcs[ocp.vpc]['vpc_id'] }}"
+    route_table_id: "{{ rtb_id }}"
+    lookup: id
+    purge_routes: false
+    routes:
+      - dest: "{{ target_cidr }}"
+        network_interface_id: "{{ tor_eni_id }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  vars:
+    rtb_id: "{{ get_vpc_route_table_raw['route_tables'] | map(attribute='route_table_id') | first }}"
+    tor_eni_id: "{{ tor_main_eni_raw['network_interfaces'][0]['id'] }}"

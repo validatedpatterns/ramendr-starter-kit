@@ -1,0 +1,22 @@
+# This task assumes that it is invoked with the following loop:
+# loop:
+#   - { name: "hub", config: "{{ HUBCONFIG }}", cluster_name: "{{ hub_cluster_name }}" }
+#   - { name: "spoke", config: "{{ SPOKECONFIG }}", cluster_name: "{{ spoke_cluster_name }}" }
+# loop_control:
+#   loop_var: ocp
+
+- name: Delete frr ec2 instance
+  amazon.aws.ec2_instance:
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Name": "frr-ec2-{{ ocp.cluster_name }}"
+      instance-state-name: ["pending","running","shutting-down", "stopping", "stopped"]
+    state: terminated
+
+- name: Delete ec2 security group
+  amazon.aws.ec2_security_group:
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+    name: test-client-{{ ocp.cluster_name }}-security-group
+    state: absent

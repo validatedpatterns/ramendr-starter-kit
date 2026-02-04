@@ -1,0 +1,68 @@
+frr defaults traditional
+log file /var/log/frr/frr.log
+log timestamp precision 3
+!
+debug zebra nht
+debug bgp neighbor-events
+debug bgp nht
+debug bgp updates in
+debug bgp updates out
+{% if metallb_bfd_enable %}
+debug bfd peer
+{% endif -%}
+
+ip prefix-list ACCEPT_LAB seq 5 permit {{ metallb_address_pool }} le 32
+{% set ns = namespace(count=10) %}
+{% for key, value in ec2_vpcs.items() %}
+ip prefix-list ACCEPT_LAB seq {{ ns.count }} permit {{ value.subnet_cidr }} le 32
+{% set ns.count = ns.count + 5 %}
+{% endfor %}
+
+!
+router bgp {{ frr.value.asn }}
+ timers bgp 3 15
+ no bgp ebgp-requires-policy
+ no bgp default ipv4-unicast
+ no bgp network import-check
+ bgp bestpath as-path multipath-relax
+
+{% for key,connection in frr.value.connections.items() %}
+ neighbor {{ key }} peer-group
+ neighbor {{ key }} remote-as {{ connection.asn }}
+{% for ip in connection.remote_ips %}
+ neighbor {{ ip }} peer-group {{ key }}
+ neighbor {{ ip }} bfd
+ neighbor {{ ip }} disable-connected-check
+{% endfor %}
+{% endfor %}
+
+ address-family ipv4 unicast
+{% for adv_routes in frr.value.fixed_advertisements %}
+  network {{ adv_routes }}
+{% endfor %}
+{% for key,connection in frr.value.connections.items() %}
+{% for ip in connection.remote_ips %}
+  neighbor {{ ip }} next-hop-self
+  neighbor {{ ip }} soft-reconfiguration inbound
+  neighbor {{ ip }} activate
+#  neighbor {{ ip }} route-map ACCEPT_LAB in
+{% endfor %}
+{% endfor %}
+  maximum-paths 4
+exit-address-family
+!
+route-map ACCEPT_LAB permit 10
+  match ip address prefix-list ACCEPT_LAB
+exit
+!
+{% if metallb_bfd_enable %}
+bfd
+{% for key, connection in frr.value.connections.items() %}
+{% for ip in connection.remote_ips %}
+  peer {{ ip }} multihop local-address {{ connection.local_ip }}
+{% endfor %}
+{% endfor %}
+exit
+{% endif %}
+!
+exit

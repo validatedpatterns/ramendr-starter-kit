@@ -1,0 +1,35 @@
+- name: Configure frr on {{ frr.key }}
+  become: true
+  delegate_to: "{{ frr.key }}"
+  block:
+  - name: Create frr config on {{ frr.key }}
+    ansible.builtin.template:
+      src: ../templates/frr.conf.j2
+      dest: /etc/frr/frr.conf
+    notify: Restart frr on frr nodes
+
+  - name: Create frr daemons config on {{ frr.key }}
+    ansible.builtin.template:
+      src: ../templates/daemons.j2
+      dest: /etc/frr/daemons
+    notify: Restart frr on frr nodes
+
+  - name: Create vtysh config on {{ frr.key }}
+    ansible.builtin.template:
+      src: ../templates/vtysh.conf.j2
+      dest: /etc/frr/vtysh.conf
+    notify: Restart frr on frr nodes
+
+  - name: Create vtysh config on {{ frr.key }}
+    ansible.builtin.template:
+      src: ../templates/vtysh.conf.j2
+      dest: /etc/frr/vtysh.conf
+    notify: Restart frr on frr nodes
+
+  - name: "Enable and start the frr Service"
+    ansible.builtin.service:
+      name: frr
+      enabled: true
+      state: started
+    notify: Restart frr on frr nodes
+

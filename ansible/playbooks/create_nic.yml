@@ -1,0 +1,46 @@
+- name: Get ENI in spoke's vpc subnet
+  amazon.aws.ec2_eni_info:
+    filters:
+      attachment.instance-id: "{{ ec2_vms[instance.key].instance_id }}"
+      subnet-id: "{{ ec2_vpcs[nic.vpc].subnet_id }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: ec2_eni_info_raw
+
+- name: Create ENI in spoke's vpc subnet if not exists
+  amazon.aws.ec2_eni:
+    subnet_id: "{{ ec2_vpcs[nic.vpc].subnet_id }}"
+    security_groups: "{{ ec2_vpcs[nic.vpc].security_group_id }}"
+    instance_id: "{{ ec2_vms[instance.key].instance_id }}"
+    device_index: "{{ ansible_loop.index }}"
+    private_ip_address: "{{ nic.ip }}"
+    attached: true
+    tags: "{{ current_tags | combine({ 'Name': instance.key + '-' + nic.vpc + '-nic' }) }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: eni_created
+  when: ec2_eni_info_raw['network_interfaces'] | length == 0
+
+- name: Debug ENI info
+  ansible.builtin.debug:
+    msg: "{{ eni_created.interface if (ec2_eni_info_raw['network_interfaces'] | length == 0) else ec2_eni_info_raw['network_interfaces'][0]['id'] }}"
+
+- name: Make sure we delete the ENI when we remove the ec2 VM
+  amazon.aws.ec2_eni:
+    eni_id: "{{ eni_id }}"
+    source_dest_check: false
+    delete_on_termination: true
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  vars:
+    eni_id: "{{ eni_created.interface.id if (ec2_eni_info_raw['network_interfaces'] | length == 0) else ec2_eni_info_raw['network_interfaces'][0]['id'] }}"
+
+# FIXME(bandini): This assumes that the main nic is not called "Wired Connection"
+# experiments with community.general.nmcli failed horribly. The below works
+- name: Set metric on the newly created
+  become: true
+  delegate_to: "{{ instance.key }}"
+  ansible.builtin.shell: |
+    set -e
+    nmcli c modify "Wired connection {{ ansible_loop.index }}" ipv4.route-metric {{ nic.metric }}
+    nmcli c up "Wired connection {{ ansible_loop.index }}"

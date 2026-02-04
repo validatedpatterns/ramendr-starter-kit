@@ -1,0 +1,24 @@
+- name: Gather the ec2 instance details for {{ instance.key }}
+  amazon.aws.ec2_instance_info:
+    filters:
+      "tag:Name": "{{ instance.key }}-vm"
+      "tag:washere": "{{ aws_arn_userid }}"
+      instance-state-name: ["pending", "running", "shutting-down", "stopping", "stopped"]
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: ec2_node_info
+
+- name: Delete ec2 instance if it exists {{ instance.key }}
+  when: ec2_node_info.instances | length != 0
+  block:
+    - name: Set ec2 instance id for {{ instance.key }}
+      ansible.builtin.set_fact:
+        instance_id: "{{ ec2_node_info.instances | map(attribute='instance_id') | first }}"
+
+    - name: Delete ec2 instance {{ instance.key }}
+      amazon.aws.ec2_instance:
+        instance_ids:
+          - "{{ instance_id }}"
+        state: terminated
+        profile: "{{ aws_profile }}"
+        region: "{{ aws_region }}"

@@ -1,3 +1,7 @@
+- name: Set aws region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[instance.value.region ~ '_aws_region'] }}"
+
 - name: Find VPC ID by Tag {{ instance.key }}
   amazon.aws.ec2_vpc_net_info:
     filters: 
@@ -113,3 +117,4 @@
     cidr_block: "{{ instance.value.cidr }}"
     region: "{{ aws_region }}"
     profile: "{{ aws_profile }}"
+  when: vpc_info.vpcs | length > 0

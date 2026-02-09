@@ -14,9 +14,12 @@
     - name: Delete created key pair
       amazon.aws.ec2_key:
         profile: "{{ aws_profile }}"
-        region: "{{ aws_region }}"
+        region: "{{ item }}"
         name: "{{ ec2_ssh_key_name }}"
         state: absent
+      loop:
+        - "{{ east_aws_region }}"
+        - "{{ west_aws_region }}"
 
     - name: Delete all EC2s
       ansible.builtin.include_tasks: delete_ec2.yml
@@ -24,6 +27,13 @@
       loop_control:
         loop_var: instance
         label: "{{ instance.key }}"
+      
+    - name: Delete vpc peerings
+      ansible.builtin.include_tasks: delete_vpc_peerings.yml
+      loop: "{{ ec2_vpcs | dict2items }}"
+      loop_control:
+        loop_var: vpc
+        label: "{{ vpc.key }}"
 
     - name: Delete all VPCs
       ansible.builtin.include_tasks: delete_vpc.yml

@@ -1,5 +1,8 @@
 # Fetches the AMI image id, prints it and returns it as the "ec2_ami_image_id"
 # fact. This AMI is used across all EC2 instances
+- name: Set aws region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[item ~ '_aws_region'] }}"
 
 - name: Get ami image
   ansible.builtin.shell: |
@@ -14,8 +17,8 @@
 
 - name: Set ami image fact
   ansible.builtin.set_fact:
-    ec2_ami_image_id: "{{ ec2_ami_image_id_raw.stdout }}"
+    "{{ item }}_ec2_ami_image_id": "{{ ec2_ami_image_id_raw.stdout }}"
 
 - name: Print ami image use
   ansible.builtin.debug:
-    msg: "Using AMI image: {{ ec2_ami_image_id }}"
+    msg: "Using AMI image: {{ vars[item ~ '_ec2_ami_image_id'] }} for {{ item }} region"

@@ -1,3 +1,7 @@
+- name: Set aws region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[ec2_vpcs[nic.vpc].region ~ '_aws_region'] }}"
+
 - name: Get ENI in spoke's vpc subnet
   amazon.aws.ec2_eni_info:
     filters:

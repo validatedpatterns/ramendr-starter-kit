@@ -1,3 +1,11 @@
+- name: Set aws region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[instance.value.region ~ '_aws_region'] }}"
+
+- name: Set AWS AZ
+  ansible.builtin.set_fact:
+    aws_az: "{{ aws_region }}a"
+
 - name: Create VPC {{ instance.key }}-vpc
   amazon.aws.ec2_vpc_net:
     name: "{{ instance.key }}-vpc"

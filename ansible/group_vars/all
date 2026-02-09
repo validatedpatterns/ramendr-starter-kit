@@ -28,16 +28,24 @@ ec2_vpcs:
     # 192.168.8.1 - 192.168.11.254
     cidr: "192.168.8.0/22"
     subnet_cidr: "192.168.8.0/24"
+    region: west
+    peer:
+      - name: corewest
+      - name: coreeast
 
   corewest:
     # 192.168.12.1 - 192.168.15.254
     cidr: "192.168.12.0/22"
     subnet_cidr: "192.168.12.0/24"
+    region: west
+    peer: []
 
   coreeast:
     # 192.168.16.1 - 192.168.19.254
     cidr: "192.168.16.0/22"
     subnet_cidr: "192.168.16.0/24"
+    region: east
+    peer: []
 
 ec2_vms:
   client:
@@ -83,13 +91,13 @@ ec2_frrs:
     private_ip: 192.168.8.100
     connections:
       towest:
-        remote_ips: 
+        remote_ips:
           - 192.168.12.100
         local_ip: 192.168.12.200
         asn: 64001
 
       toeast:
-        remote_ips: 
+        remote_ips:
           - 192.168.16.100
         local_ip: 192.168.16.200
         asn: 64002
@@ -102,7 +110,7 @@ ec2_frrs:
     private_ip: 192.168.12.100
     connections:
       tocore:
-        remote_ips: 
+        remote_ips:
           - 192.168.12.200
         local_ip: 192.168.12.100
         asn: 64666
@@ -114,7 +122,7 @@ ec2_frrs:
     private_ip: 192.168.16.100
     connections:
       tocore:
-        remote_ips: 
+        remote_ips:
           - 192.168.16.200
         local_ip: 192.168.16.100
         asn: 64666
@@ -122,4 +130,4 @@ ec2_frrs:
     fixed_advertisements: []
 
 
-# allow_different_regions: true
+allow_different_regions: true

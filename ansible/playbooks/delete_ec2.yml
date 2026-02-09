@@ -1,3 +1,7 @@
+- name: Set ami_image and aws_region region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[ec2_vpcs[instance.value.vpc].region ~ '_aws_region'] }}"
+
 - name: Gather the ec2 instance details for {{ instance.key }}
   amazon.aws.ec2_instance_info:
     filters:

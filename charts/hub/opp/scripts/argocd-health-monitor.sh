@@ -41,12 +41,12 @@ check_cluster_wedged() {
   local cluster_argocd_instance=""
   case "$cluster" in
     "$PRIMARY_CLUSTER")
-      cluster_argocd_namespace="ramendr-starter-kit-resilient"
-      cluster_argocd_instance="resilient-gitops-server"
+      cluster_argocd_namespace="ramendr-starter-kit-res-primary"
+      cluster_argocd_instance="res-primary-gitops-server"
       ;;
     "$SECONDARY_CLUSTER")
-      cluster_argocd_namespace="ramendr-starter-kit-resilient"
-      cluster_argocd_instance="resilient-gitops-server"
+      cluster_argocd_namespace="ramendr-starter-kit-res-secondary"
+      cluster_argocd_instance="res-secondary-gitops-server"
       ;;
     "local-cluster")
       cluster_argocd_namespace="openshift-gitops"

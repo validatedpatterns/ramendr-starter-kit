@@ -1,6 +1,6 @@
 ---
 clusterGroup:
-  name: resilient
+  name: res-secondary
   isHubCluster: false
 
   argoCD:
@@ -150,6 +150,6 @@ clusterGroup:
       - name: metallb.peerASN
         value: 64002
       - name: metallb.peerAddress
-        value: 10.1.31.254
+        value: 10.2.31.254
 
   managedClusterGroups: []

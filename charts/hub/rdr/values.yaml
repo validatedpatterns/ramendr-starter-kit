@@ -55,7 +55,7 @@ regionalDR:
     clusters: # Pair of clusters, make sure to create each in a different region
       primary:
         name: ocp-primary
-        clusterGroup: resilient
+        clusterGroup: res-primary
         version: 4.19.1
         install_config:
           apiVersion: v1
@@ -95,7 +95,7 @@ regionalDR:
           pullSecret: ""
       secondary:
         name: ocp-secondary
-        clusterGroup: resilient
+        clusterGroup: res-secondary
         version: 4.19.1
         install_config:
           apiVersion: v1

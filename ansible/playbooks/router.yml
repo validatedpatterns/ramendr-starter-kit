@@ -48,6 +48,7 @@
       loop_control:
         loop_var: vpc
         label: "{{ vpc.key }}"
+      when: vpc.value.peer | length > 0
 
 
     - name: Create all the EC2 instances

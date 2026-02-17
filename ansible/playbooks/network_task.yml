@@ -1,15 +1,15 @@
 # This task assumes that it is invoked with the following loop:
 # loop:
-#   - { 
+#   - {
 #        name: "west",
 #        config: "{{ WESTCONFIG }}",
-#        cluster_name: "{{ west_cluster_name }}" 
+#        cluster_name: "{{ west_cluster_name }}"
 #        tor_vm: "westtor"
-#     } 
-#   - { 
+#     }
+#   - {
 #        name: "east",
 #        config: "{{ EASTCONFIG }}",
-#        cluster_name: "{{ east_cluster_name }}" 
+#        cluster_name: "{{ east_cluster_name }}"
 #        tor_vm: "easttor"
 #     }
 # loop_control:
@@ -35,8 +35,8 @@
 - name: Extract MachineNetwork CIDR
   ansible.builtin.set_fact:
     target_cidr: >-
-      {{ 
-        (cluster_config_v1.resources[0].data['install-config'] | from_yaml).networking.machineNetwork[0].cidr 
+      {{
+        (cluster_config_v1.resources[0].data['install-config'] | from_yaml).networking.machineNetwork[0].cidr
       }}
   when: cluster_config_v1.resources | length > 0
 
@@ -108,7 +108,7 @@
         cidr_ip: "{{ target_cidr }}"
         rule_desc: All port from vpc
       - proto: all
-        cidr_ip: 192.168.0.0/16 
+        cidr_ip: 192.168.0.0/16
         rule_desc: Allow client-core-tors
     purge_rules: false
     profile: "{{ aws_profile }}"
@@ -195,7 +195,7 @@
 
 - name: Debug additional ENI interface id
   ansible.builtin.debug:
-    msg: 
+    msg:
       ec2_eni_info_raw: "{{ ec2_eni_info_raw }}"
       eni_created: "{{ eni_created }}"
       eni_id: "{{ eni_created.interface.id if (ec2_eni_info_raw['network_interfaces'] | length == 0) else ec2_eni_info_raw['network_interfaces'][0]['id'] }}"
@@ -223,7 +223,7 @@
   delay: 3
 
 # FIXME(bandini): ideally we check the connection name before
-# We calculate the gateway as Network Address + 1. If google is to be 
+# We calculate the gateway as Network Address + 1. If google is to be
 # believed that is always true on AWS. Some with the enX1 nic name
 - name: Drop second default route and add route to reach "{{ ocp.name }}" workers
   become: true
@@ -301,13 +301,13 @@
     tor_to_ocp_eni_id: "{{ eni_created.interface.id if (ec2_eni_info_raw['network_interfaces'] | length == 0) else ec2_eni_info_raw['network_interfaces'][0]['id'] }}"
 
 # Next two tasks tweak the route table of the west/east vpc
-- name: Get route table for vpc {{ ocp.vpc }}
-  amazon.aws.ec2_vpc_route_table_info:
-    filters:
-      association.subnet-id: "{{ ec2_vpcs[ocp.vpc]['subnet_id'] }}"
-    profile: "{{ aws_profile }}"
-    region: "{{ aws_region }}"
-  register: get_vpc_route_table_raw
+# - name: Get route table for vpc {{ ocp.vpc }}
+#   amazon.aws.ec2_vpc_route_table_info:
+#     filters:
+#       association.subnet-id: "{{ ec2_vpcs[ocp.vpc]['subnet_id'] }}"
+#     profile: "{{ aws_profile }}"
+#     region: "{{ aws_region }}"
+#   register: get_vpc_route_table_raw
 
 - name: Get ENI in TOR {{ ocp.name }} tor-core subnet
   amazon.aws.ec2_eni_info:
@@ -336,5 +336,6 @@
     profile: "{{ aws_profile }}"
     region: "{{ aws_region }}"
   vars:
-    rtb_id: "{{ get_vpc_route_table_raw['route_tables'] | map(attribute='route_table_id') | first }}"
+    rtb_id: "{{ ec2_vpcs[ocp.vpc]['route_table_id'] }}"
     tor_eni_id: "{{ tor_main_eni_raw['network_interfaces'][0]['id'] }}"
+  when: tor_main_eni_raw['network_interfaces'] | length > 0

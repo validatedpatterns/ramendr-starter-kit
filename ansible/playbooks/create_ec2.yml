@@ -57,14 +57,14 @@
     name: "{{ instance.key }}"
     use: systemd
 
-# - name: Add extra nics for {{ instance.key }}
-#   ansible.builtin.include_tasks: create_nic.yml
-#   when: instance.value.extra_nics | length > 0
-#   loop: "{{ instance.value.extra_nics }}"
-#   loop_control:
-#     loop_var: nic
-#     label: "{{ nic.vpc }} - {{ nic.ip }}"
-#     extended: true
+- name: Add extra nics for {{ instance.key }}
+  ansible.builtin.include_tasks: create_nic.yml
+  when: instance.value.extra_nics | length > 0
+  loop: "{{ instance.value.extra_nics }}"
+  loop_control:
+    loop_var: nic
+    label: "{{ nic.vpc }} - {{ nic.ip }}"
+    extended: true
 
 - name: Enforce rp_filter on all new nics
   become: true

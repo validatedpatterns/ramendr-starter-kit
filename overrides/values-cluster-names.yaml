@@ -6,23 +6,23 @@
 
 clusterOverrides:
   primary:
-    name: ocp-primary
-    version: 4.18.7
+    name: ocp-primary-aeros
+    version: 4.19.1
     install_config:
       metadata:
-        name: ocp-primary
+        name: ocp-primary-aeros
       platform:
         aws:
-          region: us-west-1
+          region: eu-central-1
   secondary:
-    name: ocp-secondary
-    version: 4.18.7
+    name: ocp-secondary-aeros
+    version: 4.19.1
     install_config:
       metadata:
-        name: ocp-secondary
+        name: ocp-secondary-aeros
       platform:
         aws:
-          region: us-east-1
+          region: eu-west-3
 
 # DRPC overrides (preferredCluster defaults to primary if unset)
 drpc:

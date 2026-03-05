@@ -28,12 +28,13 @@
         loop_var: instance
         label: "{{ instance.key }}"
       
-    - name: Delete vpc peerings
-      ansible.builtin.include_tasks: delete_vpc_peerings.yml
+    - name: Delete tgws
+      ansible.builtin.include_tasks: delete_tgw.yml
       loop: "{{ ec2_vpcs | dict2items }}"
       loop_control:
         loop_var: vpc
         label: "{{ vpc.key }}"
+      when: vpc.key != "coreclient"
 
     - name: Delete all VPCs
       ansible.builtin.include_tasks: delete_vpc.yml

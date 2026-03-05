@@ -1,0 +1,250 @@
+- name: Set aws region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[vpc.value.region ~ '_aws_region'] }}"
+
+- name: Get peering connection (attachment) between tgw-s
+  ansible.builtin.shell: |
+    aws ec2 describe-transit-gateway-peering-attachments \
+    --region {{ aws_region }} \
+    --profile {{ aws_profile }} \
+    --filters Name=transit-gateway-id,Values={{ tgw_id }} Name=state,Values=\[available,initiatingRequest,pendingAcceptance,peering\] \
+    --output json \
+    --no-paginate
+  register: tgw_peering_conn
+  vars:
+    tgw_id: "{{ ec2_vpcs[vpc.key].tgw_id }}"
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+
+- name: Create peering connection (attachment) between tgw-s
+  ansible.builtin.shell: |
+    aws ec2 create-transit-gateway-peering-attachment \
+    --region {{ aws_region }} \
+    --profile {{ aws_profile }} \
+    --transit-gateway-id {{ ec2_vpcs[vpc.key].tgw_id }} \
+    --peer-transit-gateway-id {{ ec2_vpcs[vpc.value.tgw_peer].tgw_id }} \
+    --peer-region {{ vars[ec2_vpcs[vpc.value.tgw_peer].region ~ '_aws_region'] }} \
+    --peer-account-id {{ ec2_vpcs[vpc.value.tgw_peer].tgw_id_owner_id }} \
+    --tag-specifications ResourceType=transit-gateway-attachment,Tags=\[\{Key=Name,Value={{ vpc.key }}-peer-{{ vpc.value.tgw_peer }}-tgw-attach,\}\] \
+    --output json \
+    --no-paginate
+  register: tgw_peering_attachments
+  when:
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+    - tgw_peering_conn_list | length == 0
+  vars: 
+    tgw_peering_conn_list: "{{ tgw_peering_conn.stdout | from_json | json_query('TransitGatewayPeeringAttachments') }}"
+
+- name: Get peering connection to accept for {{ vpc.key }}"
+  ansible.builtin.shell: |
+    aws ec2 describe-transit-gateway-peering-attachments \
+    --region {{ vars[ec2_vpcs[vpc.value.tgw_peer].region ~ '_aws_region'] }} \
+    --profile {{ aws_profile }} \
+    --filters Name=transit-gateway-id,Values={{ tgw_id }} Name=state,Values=\[pendingAcceptance\] \
+    --output json \
+    --no-paginate
+  register: get_tgw_peer_attachment
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+  vars:
+    tgw_id: "{{ ec2_vpcs[vpc.value.tgw_peer].tgw_id }}"
+
+- name: Accept peering connection between tgw-s {{ vpc.key }}
+  ansible.builtin.shell: |
+    aws ec2 accept-transit-gateway-peering-attachment \
+    --transit-gateway-attachment-id {{ tgw_attachment_id }} \
+    --region {{ vars[ec2_vpcs[vpc.value.tgw_peer].region ~ '_aws_region'] }}
+  when:
+    - vpc.key == "corewest" or vpc.key == "coreeast" 
+    - (get_tgw_peer_attachment.stdout  | from_json | json_query('TransitGatewayPeeringAttachments')) | length > 0
+  vars:
+    tgw_attachment_id: "{{ get_tgw_peer_attachment.stdout  | from_json | json_query('TransitGatewayPeeringAttachments') | first | json_query('TransitGatewayAttachmentId') }}"
+
+# retry and wait for peering to be available
+- name: Get peering attachment id
+  ansible.builtin.shell: |
+    aws ec2 describe-transit-gateway-peering-attachments \
+    --region {{ aws_region }} \
+    --profile {{ aws_profile }} \
+    --filters Name=transit-gateway-id,Values={{ tgw_id }} Name=state,Values=\[available\] \
+    --output json \
+    --no-paginate
+  register: tgw_peering_conn
+  until: tgw_peering_conn.stdout  | from_json | json_query('TransitGatewayPeeringAttachments') | length > 0
+  delay: 20
+  retries: 20
+  vars:
+    tgw_id: "{{ vpc.value.tgw_id }}"
+
+# Recreate the route always
+- name: Get route in tgw for peered tgw
+  ansible.builtin.shell: |
+    aws ec2 search-transit-gateway-routes \
+        --region {{ aws_region }}\
+        --filters Name=route-search.exact-match,Values={{ ec2_vpcs[vpc.value.tgw_peer].cidr }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+  register: get_peered_route
+
+- name: Delete route in tgw for peered tgw
+  ansible.builtin.shell: |
+    aws ec2 delete-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ ec2_vpcs[vpc.value.tgw_peer].cidr }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+  when: get_peered_route.stdout  | from_json | json_query('Routes') | length > 0
+
+- name: Create route in tgw for peered tgw
+  ansible.builtin.shell: |
+    aws ec2 create-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ ec2_vpcs[vpc.value.tgw_peer].cidr }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+        --transit-gateway-attachment-id {{ tgw_attachment_id }}
+  vars:
+    tgw_attachment_id: "{{ tgw_peering_conn.stdout  | from_json | json_query('TransitGatewayPeeringAttachments') | first | json_query('TransitGatewayAttachmentId') }}"
+
+# Recreate the route always
+- name: Get route in tgw for metallb anycast
+  ansible.builtin.shell: |
+    aws ec2 search-transit-gateway-routes \
+        --region {{ aws_region }}\
+        --filters Name=route-search.exact-match,Values={{ metallb_address_pool }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+  register: get_metallb_route
+
+- name: Delete route in tgw for metallb anycast
+  ansible.builtin.shell: |
+    aws ec2 delete-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ metallb_address_pool }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+  when: get_metallb_route.stdout  | from_json | json_query('Routes') | length > 0
+
+- name: Create route in tgw for metallb anycast range towards peer attachment if we are in the core* tgw
+  ansible.builtin.shell: |
+    aws ec2 create-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ metallb_address_pool }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+        --transit-gateway-attachment-id {{ tgw_attachment_id }}
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+  vars:
+    tgw_attachment_id: "{{ tgw_peering_conn.stdout  | from_json | json_query('TransitGatewayPeeringAttachments') | first | json_query('TransitGatewayAttachmentId') }}"
+
+- name: Create route in tgw for metallb anycast range towards vpc attachment if we are in the tor tgw
+  ansible.builtin.shell: |
+    aws ec2 create-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ metallb_address_pool }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+        --transit-gateway-attachment-id {{ tgw_attachment_id }}
+  when: 
+    - vpc.key == "westtor" or vpc.key == "easttor"
+  vars:
+    tgw_attachment_id: "{{ vpc.value.tgw_vpc_attachment_id }}"
+
+# Recreate the route always
+- name: Get route in tgw for for client cidr
+  ansible.builtin.shell: |
+    aws ec2 search-transit-gateway-routes \
+        --region {{ aws_region }}\
+        --filters Name=route-search.exact-match,Values={{ ec2_vpcs['coreclient']['subnet_cidr'] }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+  register: get_client_route
+
+- name: Delete route in tgw for metallb anycast
+  ansible.builtin.shell: |
+    aws ec2 delete-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ ec2_vpcs['coreclient']['subnet_cidr'] }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+  when: get_client_route.stdout  | from_json | json_query('Routes') | length > 0
+
+- name: Create route in tgw for client cidr range towards peer attachment if we are in the tor tgw
+  ansible.builtin.shell: |
+    aws ec2 create-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ ec2_vpcs['coreclient']['subnet_cidr'] }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+        --transit-gateway-attachment-id {{ tgw_attachment_id }}
+  when: 
+    - vpc.key == "westtor" or vpc.key == "easttor"
+  vars:
+    tgw_attachment_id: "{{ tgw_peering_conn.stdout  | from_json | json_query('TransitGatewayPeeringAttachments') | first | json_query('TransitGatewayAttachmentId') }}"
+
+- name: Create route in tgw for client cidr range towards vpc attachment if we are in the core* tgw
+  ansible.builtin.shell: |
+    aws ec2 create-transit-gateway-route \
+        --region {{ aws_region }}\
+        --destination-cidr-block {{ ec2_vpcs['coreclient']['subnet_cidr'] }} \
+        --transit-gateway-route-table-id {{ vpc.value.tgw_route_table_id }} \
+        --transit-gateway-attachment-id {{ tgw_attachment_id }}
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+  vars:
+    tgw_attachment_id: "{{ vpc.value.tgw_vpc_attachment_id }}"
+
+- name: Get nic for core VM
+  amazon.aws.ec2_eni_info:
+    filters:
+      attachment.instance-id: "{{ ec2_vms['core']['instance_id'] }}"
+      addresses.private-ip-address: "{{ ip_address }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: get_core_vm_nic
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+  vars:
+    ip_address: "{{ (vpc.key == 'corewest') | ternary('192.168.12.200', '192.168.16.200') }}"
+
+- name: Get nic for tor VM
+  amazon.aws.ec2_eni_info:
+    filters:
+      attachment.instance-id: "{{ ec2_vms[vpc.key]['instance_id'] }}"
+      addresses.private-ip-address: "{{ ip_address }}"
+    profile: "{{ aws_profile }}"
+    region: "{{ aws_region }}"
+  register: get_tor_vm_nic
+  when: 
+    - vpc.key == "westtor" or vpc.key == "easttor"
+  vars:
+    ip_address: "{{ (vpc.key == 'westtor') | ternary('192.168.14.100', '192.168.18.100') }}"
+
+- name: Set routes for the tor vpc-s
+  ansible.builtin.set_fact:
+    routes:
+        - dest: "{{ ec2_vpcs[vpc.value.tgw_peer].cidr  }}"
+          transit_gateway_id: "{{ vpc.value.tgw_id }}"
+        - dest: "{{ metallb_address_pool }}"
+          network_interface_id: "{{ vm_eni_id }}"
+        - dest: "{{ ec2_vpcs['coreclient']['subnet_cidr'] }}"
+          transit_gateway_id: "{{ vpc.value.tgw_id }}"
+  when: 
+    - vpc.key == "westtor" or vpc.key == "easttor"
+  vars:
+    vm_eni_id: "{{ get_tor_vm_nic.network_interfaces | map(attribute='id') | first }}"
+
+- name: Set routes for the core vpc-s
+  ansible.builtin.set_fact:
+    routes:
+        - dest: "{{ ec2_vpcs[vpc.value.tgw_peer].cidr  }}"
+          transit_gateway_id: "{{ vpc.value.tgw_id }}"
+        - dest: "{{ metallb_address_pool }}"
+          transit_gateway_id: "{{ vpc.value.tgw_id }}"
+        - dest: "{{ ec2_vpcs['coreclient']['subnet_cidr'] }}"
+          network_interface_id: "{{ vm_eni_id }}"
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+  vars:
+    vm_eni_id: "{{ get_core_vm_nic.network_interfaces | map(attribute='id') | first }}"
+
+- name: Create route in vpc rtbl for metallb, peer, and client
+  amazon.aws.ec2_vpc_route_table:
+    vpc_id: "{{ vpc.value.vpc_id }}"
+    route_table_id: "{{ vpc.value.route_table_id }}"
+    lookup: id
+    purge_routes: false
+    routes: "{{ routes }}"
+    region: "{{ aws_region }}"
+    profile: "{{ aws_profile }}"

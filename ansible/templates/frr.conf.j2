@@ -18,6 +18,12 @@ ip prefix-list ACCEPT_LAB seq {{ ns.count }} permit {{ value.subnet_cidr }} le 3
 {% set ns.count = ns.count + 5 %}
 {% endfor %}
 
+{% for key,connection in frr.value.connections.items() %}
+{% for ip in connection.remote_ips %}
+ip route {{ ip }}/32 {{ connection.local_ip | ansible.utils.ipaddr('network/prefix') | ansible.utils.ipaddr('next_usable') }}
+{% endfor %}
+{% endfor %}
+
 !
 router bgp {{ frr.value.asn }}
  timers bgp 3 15
@@ -32,6 +38,7 @@ router bgp {{ frr.value.asn }}
 {% for ip in connection.remote_ips %}
  neighbor {{ ip }} peer-group {{ key }}
  neighbor {{ ip }} bfd
+ neighbor {{ ip }} ebgp-multihop 10
  neighbor {{ ip }} disable-connected-check
 {% endfor %}
 {% endfor %}

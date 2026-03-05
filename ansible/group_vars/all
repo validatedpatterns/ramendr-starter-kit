@@ -29,37 +29,34 @@ ec2_vpcs:
     cidr: "192.168.8.0/22"
     subnet_cidr: "192.168.8.0/24"
     region: west
-    peer: []
 
   corewest:
     # 192.168.12.1 - 192.168.13.254
     cidr: "192.168.12.0/23"
     subnet_cidr: "192.168.12.0/24"
     region: west
-    peer: []
+    tgw_peer: westtor
 
   westtor:
     # 192.168.14.1 - 192.168.15.254
     cidr: "192.168.14.0/23"
     subnet_cidr: "192.168.14.0/24"
     region: west
-    peer:
-      - name: corewest
+    tgw_peer: corewest
 
   coreeast:
     # 192.168.16.1 - 192.168.17.254
     cidr: "192.168.16.0/23"
     subnet_cidr: "192.168.16.0/24"
     region: west # we need this in the same region as the coreclient, we add a nic here from core vm
-    peer: []
+    tgw_peer: easttor
 
   easttor:
     # 192.168.18.1 - 192.168.19.254
     cidr: "192.168.18.0/23"
     subnet_cidr: "192.168.18.0/24"
     region: east
-    peer:
-      - name: coreeast
+    tgw_peer: coreeast
 
 ec2_vms:
   client:
@@ -102,18 +99,17 @@ ec2_vms:
 ec2_frrs:
   core:
     asn: 64666
-    private_ip: 192.168.8.100
     connections:
       towest:
         remote_ips:
           - 192.168.14.100
-        local_ip: 192.168.8.100
+        local_ip: 192.168.12.200/24
         asn: 64001
 
       toeast:
         remote_ips:
           - 192.168.18.100
-        local_ip: 192.168.8.100
+        local_ip: 192.168.16.200/24
         asn: 64002
 
     fixed_advertisements:
@@ -121,24 +117,22 @@ ec2_frrs:
 
   westtor:
     asn: 64001
-    private_ip: 192.168.14.100
     connections:
       tocore:
         remote_ips:
-          - 192.168.8.100
-        local_ip: 192.168.14.100
+          - 192.168.12.200
+        local_ip: 192.168.14.100/24
         asn: 64666
       # We will extend this list dynamically with the ocp workers ips-asn
     fixed_advertisements: []
 
   easttor:
     asn: 64002
-    private_ip: 192.168.18.100
     connections:
       tocore:
         remote_ips:
-          - 192.168.8.100
-        local_ip: 192.168.18.100
+          - 192.168.16.200
+        local_ip: 192.168.18.100/24
         asn: 64666
       # We will extend this list dynamically with the ocp workers ips-asn
     fixed_advertisements: []

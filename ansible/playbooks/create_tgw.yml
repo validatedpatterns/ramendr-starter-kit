@@ -1,0 +1,40 @@
+- name: Set aws region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[vpc.value.region ~ '_aws_region'] }}"
+
+- name: "Create a new transit gateway for {{ vpc.key }}"
+  amazon.aws.ec2_transit_gateway:
+    state: present
+    region: "{{ aws_region }}"
+    description: "{{ vpc.key }} tgw"
+    tags:
+      Name: "{{ vpc.key }}"
+  register: created_tgw
+
+# Attach tgw to vpc
+- name: "Create a Transit Gateway vpc attachment for {{ vpc.key }}"
+  amazon.aws.ec2_transit_gateway_vpc_attachment:
+    state: "present"
+    region: "{{ aws_region }}"
+    transit_gateway: "{{ created_tgw.transit_gateway.transit_gateway_id }}"
+    name: "{{ vpc.key }}-tgw-attach"
+    subnets:
+      - "{{ vpc.value.subnet_id }}"
+    ipv6_support: false
+    tags:
+      Name: "{{ vpc.key }}-tgw-attach"
+  register: created_tgw_vpc_attach
+
+- name: Extend ec2_vpcs variable with newly create info
+  ansible.builtin.set_fact:
+    ec2_vpcs: >-
+      {{
+        ec2_vpcs | combine({
+          vpc.key: vpc.value | combine({ 
+            'tgw_id': created_tgw.transit_gateway.transit_gateway_id,
+            'tgw_id_owner_id': created_tgw.transit_gateway.owner_id,
+            'tgw_route_table_id': created_tgw.transit_gateway.options.association_default_route_table_id,
+            'tgw_vpc_attachment_id': created_tgw_vpc_attach.attachments | map(attribute='transit_gateway_attachment_id') | first ,
+          })
+        }, recursive=True)
+      }}

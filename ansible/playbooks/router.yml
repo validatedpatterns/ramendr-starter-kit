@@ -42,14 +42,13 @@
       ansible.builtin.debug:
         msg: "{{ ec2_vpcs }}"
 
-    - name: Create vpc peerings
-      ansible.builtin.include_tasks: create_vpc_peerings.yml
+    - name: Create transit gateways with vpc attachments
+      ansible.builtin.include_tasks: create_tgw.yml
       loop: "{{ ec2_vpcs | dict2items }}"
       loop_control:
         loop_var: vpc
         label: "{{ vpc.key }}"
-      when: vpc.value.peer | length > 0
-
+      when: vpc.key != "coreclient"
 
     - name: Create all the EC2 instances
       ansible.builtin.include_tasks: create_ec2.yml
@@ -61,14 +60,14 @@
     - name: Configure networking for west and east clusters
       ansible.builtin.include_tasks: network_task.yml
       loop:
-        - { 
+        - {
             name: "west",
             config: "{{ WESTCONFIG }}",
             cluster_name: "{{ west_cluster_name }}",
             tor_vm: "westtor",
             vpc: "corewest"
-          } 
-        - { 
+          }
+        - {
             name: "east",
             config: "{{ EASTCONFIG }}",
             cluster_name: "{{ east_cluster_name }}",
@@ -79,39 +78,46 @@
         loop_var: ocp
         label: "{{ ocp.name }}"
 
-    # - name: Drop default routes from core
-    #   become: true
-    #   delegate_to: core
-    #   ansible.builtin.shell: |
-    #     set -e -o pipefail
-    #     nmcli c modify "Wired connection 1" ipv4.never-default yes
-    #     nmcli c up "Wired connection 1"
-    #     nmcli c modify "Wired connection 2" ipv4.never-default yes
-    #     nmcli c up "Wired connection 2"
+    - name: Create transit gateways peering, routes
+      ansible.builtin.include_tasks: create_tgw_routes.yml
+      loop: "{{ ec2_vpcs | dict2items }}"
+      loop_control:
+        loop_var: vpc
+        label: "{{ vpc.key }}"
+      when: vpc.key != "coreclient"
 
-    # - name: Get ENI in core in the coreclient vpc/subnet
-    #   amazon.aws.ec2_eni_info:
-    #     filters:
-    #       attachment.instance-id: "{{ ec2_vms['core']['instance_id'] }}"
-    #       subnet-id: "{{ ec2_vpcs['coreclient']['subnet_id'] }}"
-    #     profile: "{{ aws_profile }}"
-    #     region: "{{ aws_region }}"
-    #   register: core_main_eni_raw
+    - name: Drop default routes from core
+      become: true
+      delegate_to: core
+      ansible.builtin.shell: |
+        set -e -o pipefail
+        nmcli c modify "Wired connection 1" ipv4.never-default yes
+        nmcli c up "Wired connection 1"
+        nmcli c modify "Wired connection 2" ipv4.never-default yes
+        nmcli c up "Wired connection 2"
 
-    # - name: On the coreclient routing table add a route for the metallb network to the core's main nic
-    #   amazon.aws.ec2_vpc_route_table:
-    #     vpc_id: "{{ ec2_vpcs['coreclient']['vpc_id'] }}"
-    #     route_table_id: "{{ rtb_id }}"
-    #     lookup: id
-    #     purge_routes: false
-    #     routes:
-    #       - dest: "{{ metallb_address_pool }}"
-    #         network_interface_id: "{{ core_client_eni_id }}"
-    #     profile: "{{ aws_profile }}"
-    #     region: "{{ aws_region }}"
-    #   vars:
-    #     rtb_id: "{{ ec2_vpcs['coreclient']['route_table_id'] }}"
-    #     core_client_eni_id: "{{ core_main_eni_raw['network_interfaces'][0]['id'] }}"
+    - name: Get ENI in core in the coreclient vpc/subnet
+      amazon.aws.ec2_eni_info:
+        filters:
+          addresses.private-ip-address: "{{ ec2_vms['core']['private_ip'] }}"
+        profile: "{{ aws_profile }}"
+        region: "{{ vars[ec2_vpcs['coreclient']['region'] ~ '_aws_region'] }}"
+      register: core_main_eni_raw
+
+    - name: On the coreclient routing table add a route for the metallb network to the core's main nic
+      amazon.aws.ec2_vpc_route_table:
+        vpc_id: "{{ ec2_vpcs['coreclient']['vpc_id'] }}"
+        route_table_id: "{{ rtb_id }}"
+        lookup: id
+        purge_routes: false
+        routes:
+          - dest: "{{ metallb_address_pool }}"
+            network_interface_id: "{{ core_client_eni_id }}"
+        profile: "{{ aws_profile }}"
+        region: "{{ vars[ec2_vpcs['coreclient']['region'] ~ '_aws_region'] }}"
+      vars:
+        rtb_id: "{{ ec2_vpcs['coreclient']['route_table_id'] }}"
+        core_client_eni_id: "{{ core_main_eni_raw['network_interfaces'][0]['id'] }}"
 
     - name: Configure FRR on core, torwest and torweast
       ansible.builtin.include_tasks: aws_ec2_frr.yml

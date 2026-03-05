@@ -13,4 +13,4 @@ spec:
   nodeSelectors:
     - matchLabels:
         node-role.kubernetes.io/worker: ""
-  ebgpMultiHop: false
+  ebgpMultiHop: true

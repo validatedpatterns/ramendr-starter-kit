@@ -158,11 +158,19 @@ clusterGroup:
     jobs: []
 
   managedClusterGroups:
-    resilient:
-      name: resilient
+    res-primary:
+      name: res-primary
       helmOverrides:
         - name: clusterGroup.isHubCluster
           value: "false"
       acmlabels:
         - name: clusterGroup
-          value: resilient
+          value: res-primary
+    res-secondary:
+      name: res-secondary
+      helmOverrides:
+        - name: clusterGroup.isHubCluster
+          value: "false"
+      acmlabels:
+        - name: clusterGroup
+          value: res-secondary

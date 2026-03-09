@@ -1,0 +1,152 @@
+---
+- name: Playbook to set up the BGP routing with a client ec2 in aws
+  hosts: localhost
+  gather_facts: false
+  become: false
+  vars_files:
+    # Use this to override stuff that won't be committed to git
+    - ../overrides.yml
+
+  tasks:
+    - name: Checks for ocp clusters and sets aws_region, aws_az and aws_arn_userid
+      ansible.builtin.include_tasks: check_task.yml
+
+    - name: Fetch AMI id and set ec2_ami_image_id
+      ansible.builtin.include_tasks: get_ami.yml
+      loop:
+        - west
+        - east
+
+    - name: Create key pair to access ec2 with ssh
+      amazon.aws.ec2_key:
+        profile: "{{ aws_profile }}"
+        region: "{{ item }}"
+        name: "{{ ec2_ssh_key_name }}"
+        key_material: "{{ ssh_pubkey }}"
+      loop:
+        - "{{ east_aws_region }}"
+        - "{{ west_aws_region }}"
+
+    - name: Set tags to use in every object
+      ansible.builtin.set_fact:
+        current_tags: "{{ aws_default_tags | combine({ 'washere': aws_arn_userid }) }}"
+
+    - name: Create all the VPCs, subnets, igw and rtbls
+      ansible.builtin.include_tasks: create_vpc.yml
+      loop: "{{ ec2_vpcs | dict2items }}"
+      loop_control:
+        loop_var: instance
+        label: "{{ instance.key }}"
+
+    - name: Print VPCs
+      ansible.builtin.debug:
+        msg: "{{ ec2_vpcs }}"
+
+    - name: Create transit gateways with vpc attachments
+      ansible.builtin.include_tasks: create_tgw.yml
+      loop: "{{ ec2_vpcs | dict2items }}"
+      loop_control:
+        loop_var: vpc
+        label: "{{ vpc.key }}"
+      when: vpc.key != "coreclient"
+
+    - name: Create all the EC2 instances
+      ansible.builtin.include_tasks: create_ec2.yml
+      loop: "{{ ec2_vms | dict2items }}"
+      loop_control:
+        loop_var: instance
+        label: "{{ instance.key }}"
+
+    - name: Configure networking for west and east clusters
+      ansible.builtin.include_tasks: network_task.yml
+      loop:
+        - {
+            name: "west",
+            config: "{{ WESTCONFIG }}",
+            cluster_name: "{{ west_cluster_name }}",
+            tor_vm: "westtor",
+            vpc: "corewest"
+          }
+        - {
+            name: "east",
+            config: "{{ EASTCONFIG }}",
+            cluster_name: "{{ east_cluster_name }}",
+            tor_vm: "easttor",
+            vpc: "coreeast"
+          }
+      loop_control:
+        loop_var: ocp
+        label: "{{ ocp.name }}"
+
+    - name: Create transit gateways peering, routes
+      ansible.builtin.include_tasks: create_tgw_routes.yml
+      loop: "{{ ec2_vpcs | dict2items }}"
+      loop_control:
+        loop_var: vpc
+        label: "{{ vpc.key }}"
+      when: vpc.key != "coreclient"
+
+    - name: Drop default routes from core
+      become: true
+      delegate_to: core
+      ansible.builtin.shell: |
+        set -e -o pipefail
+        nmcli c modify "Wired connection 1" ipv4.never-default yes
+        nmcli c up "Wired connection 1"
+        nmcli c modify "Wired connection 2" ipv4.never-default yes
+        nmcli c up "Wired connection 2"
+
+    - name: Get ENI in core in the coreclient vpc/subnet
+      amazon.aws.ec2_eni_info:
+        filters:
+          addresses.private-ip-address: "{{ ec2_vms['core']['private_ip'] }}"
+        profile: "{{ aws_profile }}"
+        region: "{{ vars[ec2_vpcs['coreclient']['region'] ~ '_aws_region'] }}"
+      register: core_main_eni_raw
+
+    - name: On the coreclient routing table add a route for the metallb network to the core's main nic
+      amazon.aws.ec2_vpc_route_table:
+        vpc_id: "{{ ec2_vpcs['coreclient']['vpc_id'] }}"
+        route_table_id: "{{ rtb_id }}"
+        lookup: id
+        purge_routes: false
+        routes:
+          - dest: "{{ metallb_address_pool }}"
+            network_interface_id: "{{ core_client_eni_id }}"
+        profile: "{{ aws_profile }}"
+        region: "{{ vars[ec2_vpcs['coreclient']['region'] ~ '_aws_region'] }}"
+      vars:
+        rtb_id: "{{ ec2_vpcs['coreclient']['route_table_id'] }}"
+        core_client_eni_id: "{{ core_main_eni_raw['network_interfaces'][0]['id'] }}"
+
+    - name: Configure FRR on core, torwest and torweast
+      ansible.builtin.include_tasks: aws_ec2_frr.yml
+      loop: "{{ ec2_frrs | dict2items }}"
+      loop_control:
+        loop_var: frr
+        label: "{{ frr.key }}"
+
+    - name: Generate tmux shell template
+      ansible.builtin.template:
+        src: ../templates/launch_tmux.sh.j2
+        dest: "/tmp/launch_tmux.sh"
+        mode: '0755'
+
+    - name: Print EC2 VMs
+      ansible.builtin.debug:
+        msg: "{{ ec2_vms }}"
+
+    # - name: Print TORs enX1 IPs
+    #   ansible.builtin.debug:
+    #     msg:
+    #       WEST ip: "{{ west_enx1_ip }}"
+    #       EAST ip: "{{ east_enx1_ip }}"
+
+  handlers:
+    - name: Restart frr on frr nodes
+      ansible.builtin.service:
+        name: frr
+        state: restarted
+      delegate_to: "{{ item }}"
+      become: true
+      loop: "{{ groups['frr'] }}"

@@ -1,0 +1,73 @@
+- name: Set aws region
+  ansible.builtin.set_fact:
+    aws_region: "{{ vars[vpc.value.region ~ '_aws_region'] }}"
+
+- name: "Get a Transit Gateway vpc attachment for {{ vpc.key }}"
+  amazon.aws.ec2_transit_gateway_vpc_attachment_info:
+    region: "{{ aws_region }}"
+    name: "{{ vpc.key }}-tgw-attach"
+  register: get_tgw_vpc_attachment
+
+- name: "Delete a Transit Gateway vpc attachment for {{ vpc.key }}"
+  amazon.aws.ec2_transit_gateway_vpc_attachment:
+    state: absent
+    region: "{{ aws_region }}"
+    name: "{{ vpc.key }}-tgw-attach"
+  when:
+    - get_tgw_vpc_attachment.attachments | length > 0
+
+- name: "Get a Transit Gateway peer attachment for {{ vpc.key }}"
+  ansible.builtin.shell: |
+    aws ec2 describe-transit-gateway-peering-attachments \
+    --region {{ aws_region }} \
+    --profile {{ aws_profile }} \
+    --filters Name=tag:Name,Values=\[{{ vpc.key }}-peer-{{ vpc.value.tgw_peer }}-tgw-attach\] \
+    --output json \
+    --no-paginate
+  register: get_tgw_peer_attachment
+  vars:
+    tgw_id: "{{ ec2_vpcs[vpc.key].tgw_id }}"
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+
+- name: "Delete a Transit Gateway peer attachment for {{ vpc.key }}"
+  ansible.builtin.shell: |
+    aws ec2 delete-transit-gateway-peering-attachment \
+    --region {{ aws_region }} \
+    --profile {{ aws_profile }} \
+    --transit-gateway-attachment-id {{ tgw_peer_attachment_ids | first }} \
+    --output json
+  vars:
+    tgw_id: "{{ ec2_vpcs[vpc.key].tgw_id }}"
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+    - tgw_peer_attachment_ids | length > 0
+  vars:
+      tgw_peer_attachment_ids: "{{ get_tgw_peer_attachment.stdout | from_json | json_query('TransitGatewayPeeringAttachments') | map(attribute='TransitGatewayAttachmentId') }}"
+
+- name: "Wait Transit Gateway peer attachment for {{ vpc.key }} to be deleted"
+  ansible.builtin.shell: |
+    aws ec2 describe-transit-gateway-peering-attachments \
+    --region {{ aws_region }} \
+    --profile {{ aws_profile }} \
+    --filters Name=tag:Name,Values=\[{{ vpc.key }}-peer-{{ vpc.value.tgw_peer }}-tgw-attach\] Name=state,Values=\[available,initiatingRequest,pendingAcceptance,peering,deleting\] \
+    --output json \
+    --no-paginate
+  register: get_tgw_peer_attachment
+  vars:
+    tgw_peer_attachment_ids: "{{ get_tgw_peer_attachment.stdout | from_json | json_query('TransitGatewayPeeringAttachments') | map(attribute='TransitGatewayAttachmentId') }}"
+    tgw_id: "{{ ec2_vpcs[vpc.key].tgw_id }}"
+  when: 
+    - vpc.key == "corewest" or vpc.key == "coreeast"
+  until: tgw_peer_attachment_ids | length == 0
+  delay: 20
+  retries: 15
+
+- name: "Delete a new transit gateway for {{ vpc.key }}"
+  amazon.aws.ec2_transit_gateway:
+    state: absent
+    region: "{{ aws_region }}"
+    description: "{{ vpc.key }} tgw"
+    tags:
+      Name: "{{ vpc.key }}"
+  register: created_tgw

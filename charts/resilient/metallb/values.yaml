@@ -1,0 +1,13 @@
+---
+# global:
+#   hubClusterDomain: hub.example.com
+#   localCluster: local.example.com
+
+metallb:
+  myASN: 65001
+  peerASN: 64001
+  peerAddress: 10.0.0.0
+  bfd:
+    enabled: true
+    receiveInterval: 380
+    transmitInterval: 270

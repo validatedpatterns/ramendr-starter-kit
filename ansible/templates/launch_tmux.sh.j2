@@ -1,0 +1,24 @@
+#!/bin/bash
+
+SESSION="ansible_lab"
+
+# Check if session exists
+tmux has-session -t $SESSION 2>/dev/null
+
+if [ $? != 0 ]; then
+  # Create new session (detached)
+  tmux new-session -d -s $SESSION
+
+  {% for name, info in ec2_vms.items() %}
+  # Create window for {{ name }}
+  tmux new-window -t $SESSION -n "{{ name }}"
+  tmux send-keys -t $SESSION:"{{ name }}" "ssh ec2-user@{{ info.public_ip }}" C-m
+  {% endfor %}
+
+  # Kill the default window created (usually index 0 or 1 depending on config)
+  # or simply select the first one we created.
+  tmux select-window -t $SESSION:"{{ ec2_vms.keys() | list | first }}"
+fi
+
+# Attach to session
+tmux attach -t $SESSION

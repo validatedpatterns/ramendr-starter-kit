@@ -6,6 +6,20 @@ global:
 edgeGitopsVms:
   chartVersion: "0.2.10"
 
+# Set this variable to true to use your own clusters as regional clusters
+# Also add the kubconfigs to these clusters as secrets to values-secret yaml
+#
+# - name: ocp-primary_cluster_kubeconfig
+#   fields:
+#     - name: kubeconfig
+#       path: path to kubeconfig for the cluster
+# - name: ocp-secondary_cluster_kubeconfig
+#   fields:
+#     - name: kubeconfig
+#       path: path to kubeconfig for the cluster
+byoc: false
+
+
 # Minimal overrides for cluster names, versions, regions (e.g. overrides/values-cluster-names.yaml).
 # Merge override file FIRST so full regionalDR stays here and only clusterOverrides are applied.
 # clusterOverrides:

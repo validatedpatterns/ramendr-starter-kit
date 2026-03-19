@@ -129,7 +129,10 @@ clusterGroup:
         # These resources are created by OCM operators and should never be pruned
         - group: internal.open-cluster-management.io
           kind: ManagedClusterInfo
-
+      # Uncomment this, and add your cluster kubeconfig to value secrets to use your clusters as DR clusters, instead of creating ones
+      # overrides:
+      #   - name: byoc
+      #     value: true
     vault:
       name: vault
       namespace: vault

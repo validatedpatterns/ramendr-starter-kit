@@ -19,7 +19,7 @@
       ansible.builtin.set_fact:
         values_clustergroup: "{{ lookup('file', pattern_dir + '/values-' + clustergroup_name + '.yaml') | from_yaml }}"
 
-    - name: Set fact for thew rdr app
+    - name: Set fact for the rdr app
       ansible.builtin.set_fact:
         rdr_app: "{{ values_clustergroup.clusterGroup.applications.rdr }}"
 

@@ -11,7 +11,7 @@
   vars:
     byoc_enabled: false
   tasks:
-    - name: Set fact for clsutergroup name
+    - name: Set fact for clustergroup name
       ansible.builtin.set_fact:
         clustergroup_name: "{{ values_global.main.clusterGroupName }}"
 

@@ -6,7 +6,7 @@
 
 clusterOverrides:
   primary:
-    name: rdrsk-secondary
+    name: rdrsk-primary
     version: 4.20.6
     install_config:
       metadata:
@@ -15,7 +15,7 @@ clusterOverrides:
         aws:
           region: us-west-1
   secondary:
-    name: ocp-secondary
+    name: rdrsk-secondary
     version: 4.20.6
     install_config:
       metadata:

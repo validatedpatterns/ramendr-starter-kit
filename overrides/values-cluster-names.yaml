@@ -6,24 +6,24 @@
 
 clusterOverrides:
   primary:
-    name: rdrsk-primary
+    name: ocp-primary
     version: 4.20.6
     install_config:
       metadata:
-        name: rdrsk-primary
+        name: ocp-primary
       platform:
         aws:
           region: us-west-1
   secondary:
-    name: rdrsk-secondary
+    name: ocp-secondary
     version: 4.20.6
     install_config:
       metadata:
-        name: rdrsk-secondary
+        name: ocp-secondary
       platform:
         aws:
           region: us-east-1
 
 # DRPC overrides (preferredCluster defaults to primary if unset)
 drpc:
-  preferredCluster: rdrsk-primary
+  preferredCluster: ocp-primary

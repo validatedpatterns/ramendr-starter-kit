@@ -24,3 +24,9 @@ previously documented AWS secret instead of creating a new one with the same mat
 * When OCP 4.20+ support is ready, there will be a v1.1 branch to use it.
 * Externalize all charts to prep for subsequent demo pattern.
 * Pass values-egv-dr into edge-gitops-vms chart. It used to use a symlink when it was local.
+
+v1.1 - April 2026
+
+* Change submariner to use vxlan mode by default, for compatibility reasons
+* Default to OCP 4.20+. The subscription for OADP requires "stable" channel not "stable-1.4".
+* Numerous small changes to deal with race conditions and other potential issues

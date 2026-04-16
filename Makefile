@@ -3,3 +3,15 @@
 # You can add custom targets above or below the include line
 
 include Makefile-common
+
+.PHONY: install
+install: ramen-prereq pattern-install ## Installs the pattern onto a cluster (Loads secrets as well if configured)
+
+
+
+include Makefile-common
+
+.PHONY: ramen-prereq
+ramen-prereq: ## Check if values.byoc false do nothing, else run the precheck agains clusters accessed from values-secrets
+    echo "Running precheck for ramendr"
+    cd ansible && ansible-playbook -i hosts $(EXTRA_ARGS) $(EXTRA_VARS) playbooks/validate_byoc.yml

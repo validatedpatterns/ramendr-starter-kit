@@ -30,3 +30,4 @@ v1.1 - April 2026
 * Change submariner to use vxlan mode by default, for compatibility reasons
 * Default to OCP 4.20+. The subscription for OADP requires "stable" channel not "stable-1.4".
 * Numerous small changes to deal with race conditions and other potential issues
+* Introduce "BYOC" (bring-your-own-cluster) as an option for cluster provisioning (thanks @darkdoc)

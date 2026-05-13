@@ -6,27 +6,27 @@
 
 clusterOverrides:
   primary:
-    name: ocp-primary
+    name: mj-rdr420-p
     version: 4.20.6
     install_config:
       metadata:
-        name: ocp-primary
+        name: mj-rdr420-p
       platform:
         aws:
           region: us-west-1
   secondary:
-    name: ocp-secondary
+    name: mj-r420-s
     version: 4.20.6
     install_config:
       metadata:
-        name: ocp-secondary
+        name: mj-r420-s
       platform:
         aws:
           region: us-east-1
 
 # DRPC overrides (preferredCluster defaults to primary if unset)
 drpc:
-  preferredCluster: ocp-primary
+  preferredCluster: mj-rdr420-p
 
 # Set this to "true", provision clusters, and add their kubeconfigs
 # as described in the values-secret template; then run

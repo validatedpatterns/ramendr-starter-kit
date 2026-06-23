@@ -10,7 +10,7 @@ clusterOverrides:
     version: 4.22.1
     install_config:
       metadata:
-        name: ocp-primary
+        name: mhj-rdr-v12-p
       platform:
         aws:
           region: us-west-1
@@ -19,7 +19,7 @@ clusterOverrides:
     version: 4.22.1
     install_config:
       metadata:
-        name: ocp-secondary
+        name: mhj-rdr-v12-s
       platform:
         aws:
           region: us-east-1

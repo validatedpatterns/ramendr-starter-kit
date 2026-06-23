@@ -10,8 +10,7 @@ clusterOverrides:
     version: 4.22.1
     install_config:
       metadata:
-        name: mhj-ocp-422-p
-      #  name: ocp-primary
+        name: ocp-primary
       platform:
         aws:
           region: us-west-1
@@ -20,8 +19,7 @@ clusterOverrides:
     version: 4.22.1
     install_config:
       metadata:
-        name: mhj-ocp-422-s
-        # name: ocp-secondary
+        name: ocp-secondary
       platform:
         aws:
           region: us-east-1

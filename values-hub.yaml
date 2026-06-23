@@ -65,11 +65,8 @@ clusterGroup:
       name: acm
       namespace: open-cluster-management
       argoProject: hub
-      #path: "."
-      #repoURL: https://github.com/mbaldessari/acm-chart
-      #chartVersion: with_patch
       chart: acm
-      chartVersion: 0.1.*
+      chartVersion: 0.2.*
       ignoreDifferences:
         - group: internal.open-cluster-management.io
           kind: ManagedClusterInfo

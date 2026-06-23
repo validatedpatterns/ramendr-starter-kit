@@ -37,3 +37,4 @@ v1.2 - June 2026
 * Move cluster CA management stuff to a new namespace (cluster-ca-mgt)
 * Use productized OpenShift External Secrets operator
 * Default to OCP 4.22
+* Update to ACM chart v0.2.*

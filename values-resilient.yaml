@@ -77,7 +77,7 @@ clusterGroup:
     openshift-external-secrets:
       name: openshift-external-secrets
       namespace: external-secrets
-      argoProject: opp
+      argoProject: resilient
       chart: openshift-external-secrets
       chartVersion: 0.0.*
 

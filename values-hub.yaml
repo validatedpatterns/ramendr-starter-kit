@@ -86,7 +86,6 @@ clusterGroup:
       argoProject: opp
       chart: opp-policy-chart
       chartVersion: 0.0.*
-      path: "."
       annotations:
         argocd.argoproj.io/sync-wave: "5"
       syncPolicy:

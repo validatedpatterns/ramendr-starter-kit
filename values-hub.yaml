@@ -117,7 +117,7 @@ clusterGroup:
       namespace: regional-dr
       argoProject: opp
       chart: regionaldr-with-virt
-      chartVersion: 0.0.*
+      chartVersion: 0.0.2
       annotations:
         argocd.argoproj.io/sync-wave: "10"
       syncPolicy:

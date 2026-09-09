@@ -28,7 +28,7 @@ Spoke BOMs nest under the install variant as
 
 | Variant | Select | Purpose |
 |---------|--------|---------|
-| `odf` (default) | `main.variant: odf` | Baseline: full ODF Regional DR + Virtualization |
+| `odf` (default) | `main.variant: odf` | Baseline: full ODF Regional DR + Virtualization; `byoc: true` |
 | `drpartner-s4` | `main.variant: drpartner-s4` | Partner CSI + hub S4: OADP, OCP-V, preview RHDR; infrastructure DRClusters + `2m-novm` DRPolicy (no `2m-vm`/DRPC/VMs); Submariner disabled; `byoc: true` |
 | `drpartner-minimal` | `main.variant: drpartner-minimal` | Partner CSI without S4, Submariner, or DRCluster sync/validation: OADP, OCP-V, preview RHDR; Hive/BYOC only (`byoc: true`) |
 

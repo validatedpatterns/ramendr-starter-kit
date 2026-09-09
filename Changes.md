@@ -3,8 +3,8 @@
 v1.3 - September 2026
 
 * Drop the ODF-MCO `drpartner-s4` variant and rename `rhdr-s4` to `drpartner-s4`.
-* `drpartner-minimal` uses the same preview RHDR catalog/IDMS/subscription and
-  defaults to `byoc: true`. The `odf` variant is unchanged.
+* `drpartner-minimal` uses the same preview RHDR catalog/IDMS/subscription.
+* Patterns are now defaulted to `byoc: true`.
 
 v1.3 - August 2026
 

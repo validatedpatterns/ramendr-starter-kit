@@ -7,3 +7,24 @@ storageSystem:
 
 objectStorage:
   enable: true
+
+odf:
+  # Workaround for a Rook/ODF bug: the default zone topology spread constraint on OSD
+  # prepare pods requires device-class=ssd, a label only added after OSD initialization,
+  # not during prepare. The constraint matches zero pods and is a no-op, allowing all
+  # 3 prepare pods to land on the same node. This sets a hard per-hostname constraint
+  # that actually matches rook-ceph-osd-prepare pods, ensuring one prepare pod per node.
+  # Requires openshift-data-foundations chart >= 0.3.2 (exposes odf.preparePlacement).
+  # When using OPP chart <= 0.3.1, the odf-prepare-patch ArgoCD app applies this patch
+  # as a PostSync hook instead.
+  preparePlacement:
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchExpressions:
+            - key: app
+              operator: In
+              values:
+                - rook-ceph-osd-prepare

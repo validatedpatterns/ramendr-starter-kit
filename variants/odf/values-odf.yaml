@@ -165,6 +165,19 @@ clusterGroup:
           name: cluster
           jqPathExpressions:
             - .status
+        # ESO 1.1+ adds schema defaults to the live ExternalSecret that the chart intentionally
+        # omits for ESO 1.0 compatibility. Suppress all four drifting fields at the Application
+        # layer (as the chart comment in hub-externalsecret.yaml instructs):
+        #   deletionPolicy: Retain   (target)
+        #   engineVersion: v2        (target.template)
+        #   mergePolicy: Replace     (target.template)
+        - group: external-secrets.io
+          kind: ExternalSecret
+          name: cluster-ca-pushsecrets-import
+          jqPathExpressions:
+            - .spec.target.deletionPolicy
+            - .spec.target.template.engineVersion
+            - .spec.target.template.mergePolicy
 
     odf-dr:
       name: odf-dr

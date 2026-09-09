@@ -12,3 +12,6 @@ super-linter.log
 .ansible
 /ocp-primary.yaml
 /ocp-secondary.yaml
+tests/ci/.results/
+tests/ci/.pytest_cache/
+tests/ci/__pycache__/

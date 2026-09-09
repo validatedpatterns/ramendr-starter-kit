@@ -20,12 +20,12 @@ requirements:
       platform:
         aws:
           replicas: 3
-          type: m5.2xlarge
+          type: m5.4xlarge
     controlPlane:
       platform:
         aws:
           replicas: 3
-          type: m5.xlarge
+          type: m5.4xlarge
   spoke: # Managed DR clusters (primary/secondary)
     compute:
       platform:

@@ -1,0 +1,274 @@
+---
+# Tech-demo variant: full ODF Regional DR with Virtualization + AAP config-as-code.
+# Adds Ansible Automation Platform (AAP) instance and aap-config application that
+# drives the demo config-as-code repo. Boutique workload is deployed on spoke.
+# No ACM Observability (dropped vs odf variant for simplified demo install).
+clusterGroup:
+  name: techdemo
+  isHubCluster: true
+  namespaces:
+    cluster-ca-mgt: {}
+    open-cluster-management: {}
+    open-cluster-management-observability: {}
+    vault: {}
+    external-secrets-operator:
+      operatorGroup: true
+      targetNamespaces: []
+    regional-dr: {}
+    openshift-dr-system: {}
+    openshift-dr-ops: {}
+    openshift-storage: {}
+    policies: {}
+    aap-config: {}
+    ansible-automation-platform: {}
+    cert-manager-operator: {}
+    cert-manager: {}
+    vp-manage-proxy-cluster-ca: {}
+
+  subscriptions:
+    aap-operator:
+      name: ansible-automation-platform-operator
+      namespace: ansible-automation-platform
+      channel: stable-2.6
+
+    acm:
+      name: advanced-cluster-management
+      namespace: open-cluster-management
+      channel: release-2.17
+
+    eso:
+      name: openshift-external-secrets-operator
+      namespace: external-secrets-operator
+      channel: stable-v1
+
+    odf-multicluster-orchestrator:
+      name: odf-multicluster-orchestrator
+      namespace: openshift-operators
+
+    openshift-data-foundation:
+      name: odf-operator
+      namespace: openshift-storage
+
+    cert-manager:
+      name: openshift-cert-manager-operator
+      namespace: cert-manager-operator
+      channel: stable-v1
+      config:
+        env:
+          - name: UNSUPPORTED_ADDON_FEATURES
+            value: "TrustManager=true"
+
+  argoCD:
+    resourceTrackingMethod: annotation
+
+  argoProjects:
+    - hub
+    - opp
+
+  sharedValueFiles:
+    - '/overrides/values-{{ $.Values.global.clusterPlatform }}.yaml'
+
+  applications:
+    aap:
+      name: ansible-automation-platform
+      namespace: ansible-automation-platform
+      argoProject: hub
+      chart: ansible-automation-platform-instance
+      chartVersion: 0.1.*
+
+    aap-config:
+      name: aap-config
+      namespace: aap-config
+      argoProject: hub
+      chart: aap-config
+      chartVersion: 0.2.*
+      extraValueFiles:
+        - '$patternref/variants/techdemo/values-aap-config-rdr.yaml'
+
+    acm:
+      name: acm
+      namespace: open-cluster-management
+      argoProject: hub
+      chart: acm
+      chartVersion: 0.2.*
+      ignoreDifferences:
+        - group: internal.open-cluster-management.io
+          kind: ManagedClusterInfo
+
+    ensure-openshift-console-plugins:
+      name: ensure-openshift-console-plugins
+      namespace: openshift-console
+      argoProject: opp
+      chart: ensure-openshift-console-plugins
+      chartVersion: 0.1.*
+      extraValueFiles:
+        - '$patternref/variants/techdemo/values-console-plugins-hub.yaml'
+
+    opp-policy:
+      name: opp-policy
+      namespace: openshift
+      argoProject: opp
+      chart: opp-policy-chart
+      chartVersion: 0.1.*
+      annotations:
+        argocd.argoproj.io/sync-wave: "5"
+      syncPolicy:
+        automated: {}
+        retry:
+          limit: 20
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - syncTimeout=3600s
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground
+          - RespectIgnoreDifferences=true
+          - ServerSideApply=true
+      extraValueFiles:
+        - '/overrides/values-cluster-names.yaml'
+      ignoreDifferences:
+      - group: operators.openshift.io
+        kind: Console
+        jsonPointers:
+          - /spec/plugins
+
+    vp-manage-proxy-cluster-ca:
+      name: vp-manage-proxy-cluster-ca
+      namespace: vp-manage-proxy-cluster-ca
+      argoProject: hub
+      chart: vp-manage-proxy-cluster-ca
+      chartVersion: 0.2.*
+      extraValueFiles:
+        - '$patternref/overrides/values-vp-manage-proxy-cluster-ca-hub.yaml'
+      annotations:
+        argocd.argoproj.io/sync-wave: "3"
+      syncPolicy:
+        automated: {}
+        retry:
+          limit: 20
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - RespectIgnoreDifferences=true
+          - ServerSideApply=true
+          - CreateNamespace=true
+      ignoreDifferences:
+        - group: external-secrets.io
+          kind: ExternalSecret
+          jqPathExpressions:
+            - .spec.dataFrom[].extract.nullBytePolicy
+        - group: trust.cert-manager.io
+          kind: Bundle
+          jqPathExpressions:
+            - .status
+        - group: ""
+          kind: ConfigMap
+          name: vp-pattern-proxy-ca-bundle
+          namespace: openshift-config
+          jqPathExpressions:
+            - .data["ca-bundle.crt"]
+        - group: config.openshift.io
+          kind: Proxy
+          name: cluster
+          jqPathExpressions:
+            - .status
+        - group: external-secrets.io
+          kind: ExternalSecret
+          name: cluster-ca-pushsecrets-import
+          jqPathExpressions:
+            - .spec.target.deletionPolicy
+            - .spec.target.template.engineVersion
+            - .spec.target.template.mergePolicy
+
+    odf-dr:
+      name: odf-dr
+      namespace: regional-dr
+      argoProject: opp
+      chart: odf-dr-chart
+      chartVersion: 0.1.*
+      annotations:
+        argocd.argoproj.io/sync-wave: "8"
+      syncPolicy:
+        automated: {}
+        retry:
+          limit: 60
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - RespectIgnoreDifferences=true
+      extraValueFiles:
+        - '/overrides/values-cluster-names.yaml'
+      ignoreDifferences:
+        - group: internal.open-cluster-management.io
+          kind: ManagedClusterInfo
+
+    rdr:
+      name: regional-dr
+      namespace: regional-dr
+      argoProject: opp
+      chart: regionaldr-with-virt
+      chartVersion: 0.1.*
+      annotations:
+        argocd.argoproj.io/sync-wave: "10"
+      # automated starts on so install can settle; PostSync argocd-sync-disable
+      # (regionaldr-with-virt >= 0.1.1) removes it and adds hub ignoreDifferences
+      # so this desired automated: {} is not re-applied by parent selfHeal.
+      syncPolicy:
+        automated: {}
+        retry:
+          limit: 60
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - RespectIgnoreDifferences=true
+      extraValueFiles:
+        - '/overrides/values-cluster-names.yaml'
+        - '$patternref/variants/techdemo/values-egv-dr.yaml'
+      ignoreDifferences:
+        - group: internal.open-cluster-management.io
+          kind: ManagedClusterInfo
+
+    vault:
+      name: vault
+      namespace: vault
+      argoProject: hub
+      chart: hashicorp-vault
+      chartVersion: 0.1.*
+
+    openshift-external-secrets:
+      name: openshift-external-secrets
+      namespace: external-secrets
+      argoProject: opp
+      chart: openshift-external-secrets
+      chartVersion: 0.0.*
+
+    odf:
+      name: odf
+      namespace: openshift-storage
+      argoProject: opp
+      chart: openshift-data-foundations
+      chartVersion: 0.3.*
+      extraValueFiles:
+        - '$patternref/overrides/values-odf-chart.yaml'
+
+  imperative:
+    verbosity: "-vvv"
+    jobs: []
+
+  managedClusterGroups:
+    resilient:
+      name: resilient
+      helmOverrides:
+        - name: clusterGroup.isHubCluster
+          value: "false"
+      acmlabels:
+        - name: clusterGroup
+          value: resilient

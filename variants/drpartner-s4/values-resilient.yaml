@@ -26,6 +26,10 @@ clusterGroup:
     cert-manager-operator: {}
     cert-manager: {}
     vp-manage-proxy-cluster-ca: {}
+    openshift-storage:
+      operatorGroup: true
+      targetNamespaces:
+        - openshift-storage
 
   indexImages:
     rhdr:
@@ -71,6 +75,11 @@ clusterGroup:
         env:
           - name: UNSUPPORTED_ADDON_FEATURES
             value: "TrustManager=true"
+
+    csi-addons:
+      name: odf-csi-addons-operator
+      namespace: openshift-storage
+      channel: stable-4.22
 
   argoProjects:
     - resilient

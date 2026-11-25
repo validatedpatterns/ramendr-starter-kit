@@ -15,8 +15,12 @@ global:
 main:
   # Selecting a variant loads variants/<name>/values-<name>.yaml when the
   # variants/ folder is present (global.vpNewFolderDir=true).
+  # minimal = partner CSI + preview RHDR (testing only).
   # drpartner-s4 = partner CSI + hub S4 + preview RHDR (testing only).
-  # odf remains the documented default in pattern-metadata.yaml.
+  # techdemo = full ODF Regional DR with Virtualization and Ansible Automation Platform (AAP) config-as-code. 
+  #   Adds AAP instance and aap-config application driven by the ramendr-techdemo-config-as-code repo. 
+  #   Deploys the Boutique workload on spoke clusters for end-to-end demo scenarios.
+  #   odf remains the documented default in pattern-metadata.yaml.
   variant: odf
   multiSourceConfig:
     enabled: true

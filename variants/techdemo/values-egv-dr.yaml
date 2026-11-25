@@ -1,0 +1,85 @@
+---
+# Techdemo edge-gitops-vms / boutique overrides (aligned with ramendr-techdemo sandbox).
+# Produces rhel9-redis-001 for AAP Redis discovery playbooks.
+disableExternalSecrets: false
+waitForMetalNode: false
+
+vmDefaults:
+  accessMode: "ReadWriteMany"
+  storageClassName: "ocs-storagecluster-ceph-rbd-virtualization"
+  volumeMode: "Block"
+  count: 1
+  flavor: medium
+  workload: server
+  os: rhel9
+  storage: 30Gi
+  memory: 4Gi
+  cores: 1
+  sockets: 1
+  threads: 1
+  template: rhel9-server-medium
+  sshsecret: secret/data/global/vm-ssh
+  cloudinitsecret: secret/data/global/cloud-init
+  sshpubkeyfield: publickey
+  publishService: true
+  serviceType: LoadBalancer
+  extraLabels:
+    drprotection: true
+  # extraLabels is available for default extra labels to add to the virtualmachine
+  # extraAnnotations is available for default extra labels to add to the virtualmachine
+  ports:
+    - name: ssh
+      port: 22
+      protocol: TCP
+      targetPort: 22
+    - name: redis
+      port: 6379
+      protocol: TCP
+      targetPort: 6379
+
+vms:
+  redis:
+    count: 1
+    role: redis
+
+  desktop:
+    count: 1
+    role: desktop
+    os: windows2k22
+    dataSource: windows2k22
+    efi: true
+    mainDiskStorageBus: sata
+    storage: 50Gi
+    #machineType: "pc-q35-9.2"
+    ports:
+      - name: ssh
+        port: 22
+        protocol: TCP
+        targetPort: 22
+      - name: rdp
+        port: 389
+        protocol: TCP
+        targetPort: 389
+
+boutique:
+  deploy: true
+
+redis:
+  external:
+    enabled: true
+    address: rhel9-redis-001.gitops-vms.svc
+
+frontend:
+  enableSingleSharedSession: true
+
+externalDataSources:
+  windows2k22:
+    name: windows2k22
+    type: registry
+    url: 'docker://quay.io/martjack/windows_image:latest'
+    registryCredentialsSecret: windows
+    size: 50G
+
+registryCredentialExternalSecrets:
+  windows:
+    vaultKey: secret/data/global/privatevm-credentials

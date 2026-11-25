@@ -1,43 +1,71 @@
 ---
 clusterGroup:
-  name: drpartner-minimal
-  isHubCluster: true
+  name: resilient
+  isHubCluster: false
+
+  argoCD:
+    resourceTrackingMethod: annotation
+
   namespaces:
-    cluster-ca-mgt: {}
-    open-cluster-management: {}
-    open-cluster-management-observability: {}
-    vault: {}
+    openshift-cnv: {}
+    policies: {}
+    gitops-vms: {}
+    external-dns-operator: {}
     external-secrets-operator:
       operatorGroup: true
       targetNamespaces: []
-    regional-dr: {}
-    openshift-dr-system: {}
-    openshift-dr-ops: {}
-    policies: {}
+    openshift-adp:
+      operatorGroup: true
+      targetNamespaces:
+        - openshift-adp
+      labels:
+        cluster-ca.vp.io/differential-ca-target: "true"
+    openshift-workload-availability:
+      operatorGroup: true
+      targetNamespaces: []
     cert-manager-operator: {}
     cert-manager: {}
     vp-manage-proxy-cluster-ca: {}
+    openshift-storage:
+      operatorGroup: true
+      targetNamespaces:
+        - openshift-storage
+
   indexImages:
     rhdr:
       name: rhdr-catalog
       image: quay.io/openshift-virtualization-dr/rhdr-mirror:latest
+
   subscriptions:
-    acm:
-      name: advanced-cluster-management
-      namespace: open-cluster-management
-      channel: release-2.17
+    openshift-virtualization:
+      name: kubevirt-hyperconverged
+      namespace: openshift-cnv
+      channel: stable
+
+    external-dns:
+      name: external-dns-operator
+      namespace: external-dns-operator
+      channel: stable-v1
 
     eso:
       name: openshift-external-secrets-operator
       namespace: external-secrets-operator
       channel: stable-v1
 
-    # Preview RHDR productization (testing only, not production).
-    rhdr:
-      name: rhdr-multicluster-operator
-      namespace: openshift-operators
-      source: rhdr-catalog
-      channel: stable-4.22
+    node-health-check:
+      name: node-healthcheck-operator
+      namespace: openshift-workload-availability
+      channel: stable
+
+    self-node-remediation:
+      name: self-node-remediation
+      namespace: openshift-workload-availability
+      channel: stable
+
+    openshift-oadp:
+      name: redhat-oadp-operator
+      namespace: openshift-adp
+      channel: stable
 
     cert-manager:
       name: openshift-cert-manager-operator
@@ -48,14 +76,19 @@ clusterGroup:
           - name: UNSUPPORTED_ADDON_FEATURES
             value: "TrustManager=true"
 
-  argoCD:
-    resourceTrackingMethod: annotation
+    csi-addons:
+      name: odf-csi-addons-operator
+      namespace: openshift-storage
+      channel: stable-4.22
+
+    # Recipe controller (ODF/RHODF packaging via redhat-operators).
+    recipe:
+      name: recipe
+      namespace: openshift-storage
+      channel: stable-4.22
 
   argoProjects:
-    - hub
-    - opp
-  sharedValueFiles:
-    - '/overrides/values-{{ $.Values.global.clusterPlatform }}.yaml'
+    - resilient
 
   # Preview RHDR FBC images (Konflux, with rhdr-mirror fallback for GC'd digests).
   extraObjects:
@@ -171,65 +204,16 @@ clusterGroup:
               - quay.io/redhat-user-workloads/rhdr-tenant/rhdr/rhdr-ramen-operator-base-image-4-22
               - quay.io/openshift-virtualization-dr/rhdr-mirror
 
+  imperative:
+    jobs: []
+
   applications:
-    acm:
-      name: acm
-      namespace: open-cluster-management
-      argoProject: hub
-      chart: acm
-      chartVersion: 0.2.*
-      ignoreDifferences:
-        - group: internal.open-cluster-management.io
-          kind: ManagedClusterInfo
-
-    ensure-openshift-console-plugins:
-      name: ensure-openshift-console-plugins
-      namespace: openshift-console
-      argoProject: opp
-      chart: ensure-openshift-console-plugins
-      chartVersion: 0.1.*
-      extraValueFiles:
-        - '$patternref/variants/drpartner-minimal/values-console-plugins-hub.yaml'
-
-    opp-policy:
-      name: opp-policy
-      namespace: openshift
-      argoProject: opp
-      chart: opp-policy-chart
-      chartVersion: 0.1.*
-      annotations:
-        argocd.argoproj.io/sync-wave: "5"
-      syncPolicy:
-        automated: {}
-        retry:
-          limit: 20
-          backoff:
-            duration: 5s
-            factor: 2
-            maxDuration: 3m
-        syncOptions:
-          - syncTimeout=3600s
-          - CreateNamespace=true
-          - PrunePropagationPolicy=foreground
-          - RespectIgnoreDifferences=true
-          - ServerSideApply=true
-      extraValueFiles:
-        - '/overrides/values-cluster-names.yaml'
-        - '$patternref/variants/drpartner-minimal/values-opp-policy.yaml'
-      ignoreDifferences:
-      - group: operators.openshift.io
-        kind: Console
-        jsonPointers:
-          - /spec/plugins
-
     vp-manage-proxy-cluster-ca:
       name: vp-manage-proxy-cluster-ca
       namespace: vp-manage-proxy-cluster-ca
-      argoProject: hub
+      argoProject: resilient
       chart: vp-manage-proxy-cluster-ca
       chartVersion: 0.2.*
-      annotations:
-        argocd.argoproj.io/sync-wave: "3"
       syncPolicy:
         automated: {}
         retry:
@@ -243,82 +227,56 @@ clusterGroup:
           - ServerSideApply=true
           - CreateNamespace=true
       extraValueFiles:
-        - '$patternref/overrides/values-vp-manage-proxy-cluster-ca-hub.yaml'
+        - '$patternref/overrides/values-vp-manage-proxy-cluster-ca-resilient.yaml'
       ignoreDifferences:
         # Newer than ESO 1.0; omit from chart manifests. Ignore only when live ESO defaults it.
         - group: external-secrets.io
           kind: ExternalSecret
           jqPathExpressions:
             - .spec.dataFrom[].extract.nullBytePolicy
-        - group: trust.cert-manager.io
-          kind: Bundle
-          jqPathExpressions:
-            - .status
-        - group: ""
-          kind: ConfigMap
-          name: vp-pattern-proxy-ca-bundle
-          namespace: openshift-config
-          jqPathExpressions:
-            - .data["ca-bundle.crt"]
-        - group: config.openshift.io
-          kind: Proxy
-          name: cluster
-          jqPathExpressions:
-            - .status
 
-    # Hive/BYOC cluster bring-up without Ramen CRs, DRClusters, validation, or VMs.
-    rdr:
-      name: regional-dr
-      namespace: regional-dr
-      argoProject: opp
-      chart: regionaldr-with-virt
+    ensure-openshift-console-plugins:
+      name: ensure-openshift-console-plugins
+      namespace: openshift-console
+      argoProject: resilient
+      chart: ensure-openshift-console-plugins
       chartVersion: 0.1.*
-      annotations:
-        argocd.argoproj.io/sync-wave: "10"
-      # automated starts on so install can settle; PostSync argocd-sync-disable
-      # (regionaldr-with-virt >= 0.1.1) removes it and adds hub ignoreDifferences
-      # so this desired automated: {} is not re-applied by parent selfHeal.
-      syncPolicy:
-        automated: {}
-        retry:
-          limit: 60
-          backoff:
-            duration: 5s
-            factor: 2
-            maxDuration: 3m
-        syncOptions:
-          - RespectIgnoreDifferences=true
       extraValueFiles:
-        - '/overrides/values-cluster-names.yaml'
-        - '$patternref/variants/drpartner-minimal/values-regional-dr.yaml'
-      ignoreDifferences:
-        - group: internal.open-cluster-management.io
-          kind: ManagedClusterInfo
-
-    vault:
-      name: vault
-      namespace: vault
-      argoProject: hub
-      chart: hashicorp-vault
-      chartVersion: 0.1.*
+        - '$patternref/variants/minimal/values-console-plugins-spokes.yaml'
 
     openshift-external-secrets:
       name: openshift-external-secrets
       namespace: external-secrets
-      argoProject: opp
+      argoProject: resilient
       chart: openshift-external-secrets
       chartVersion: 0.0.*
 
-  imperative:
-    verbosity: "-vvv"
-    jobs: []
+    openshift-cnv:
+      name: openshift-cnv
+      namespace: openshift-cnv
+      argoProject: resilient
+      chart: openshift-virtualization-instance
+      chartVersion: 0.1.*
 
-  managedClusterGroups:
-    resilient:
-      name: resilient
-      helmOverrides:
-        - name: clusterGroup.isHubCluster
-          value: "false"
-      acmlabels:
-        - name: clusterGroup
-          value: resilient
+    node-health-check-operator:
+      name: node-health-check-operator
+      namespace: openshift-workload-availability
+      argoProject: resilient
+      chart: node-health-check-operator
+      chartVersion: 0.1.*
+
+    external-dns-operator:
+      name: external-dns-operator
+      namespace: external-dns-operator
+      argoProject: resilient
+      chart: external-dns-operator
+      chartVersion: 0.1.*
+
+    adp-data-protection:
+      name: adp-data-protection-application
+      namespace: openshift-adp
+      argoProject: resilient
+      chart: data-protection-application
+      chartVersion: 0.0.*
+
+  managedClusterGroups: []

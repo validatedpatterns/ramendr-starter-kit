@@ -1,0 +1,162 @@
+---
+clusterGroup:
+  name: resilient
+  isHubCluster: false
+
+  argoCD:
+    resourceTrackingMethod: annotation
+
+  namespaces:
+    openshift-cnv: {}
+    openshift-storage: {}
+    policies: {}
+    gitops-vms: {}
+    boutique: {}
+    external-dns-operator: {}
+    external-secrets-operator:
+      operatorGroup: true
+      targetNamespaces: []
+    openshift-adp:
+      operatorGroup: true
+      targetNamespaces:
+        - openshift-adp
+      labels:
+        cluster-ca.vp.io/differential-ca-target: "true"
+    openshift-workload-availability:
+      operatorGroup: true
+      targetNamespaces: []
+    cert-manager-operator: {}
+    cert-manager: {}
+    vp-manage-proxy-cluster-ca: {}
+
+  subscriptions:
+    openshift-virtualization:
+      name: kubevirt-hyperconverged
+      namespace: openshift-cnv
+      channel: stable
+
+    external-dns:
+      name: external-dns-operator
+      namespace: external-dns-operator
+      channel: stable-v1
+
+    eso:
+      name: openshift-external-secrets-operator
+      namespace: external-secrets-operator
+      channel: stable-v1
+
+    node-health-check:
+      name: node-healthcheck-operator
+      namespace: openshift-workload-availability
+      channel: stable
+
+    self-node-remediation:
+      name: self-node-remediation
+      namespace: openshift-workload-availability
+      channel: stable
+
+    openshift-data-foundation:
+      name: odf-operator
+      namespace: openshift-storage
+
+    openshift-oadp:
+      name: redhat-oadp-operator
+      namespace: openshift-adp
+      channel: stable
+
+    cert-manager:
+      name: openshift-cert-manager-operator
+      namespace: cert-manager-operator
+      channel: stable-v1
+      config:
+        env:
+          - name: UNSUPPORTED_ADDON_FEATURES
+            value: "TrustManager=true"
+
+  argoProjects:
+    - resilient
+
+  imperative:
+    jobs: []
+
+  applications:
+    vp-manage-proxy-cluster-ca:
+      name: vp-manage-proxy-cluster-ca
+      namespace: vp-manage-proxy-cluster-ca
+      argoProject: resilient
+      chart: vp-manage-proxy-cluster-ca
+      chartVersion: 0.2.*
+      syncPolicy:
+        automated: {}
+        retry:
+          limit: 20
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - RespectIgnoreDifferences=true
+          - ServerSideApply=true
+          - CreateNamespace=true
+      extraValueFiles:
+        - '$patternref/overrides/values-vp-manage-proxy-cluster-ca-resilient.yaml'
+      ignoreDifferences:
+        - group: external-secrets.io
+          kind: ExternalSecret
+          jqPathExpressions:
+            - .spec.dataFrom[].extract.nullBytePolicy
+
+    ensure-openshift-console-plugins:
+      name: ensure-openshift-console-plugins
+      namespace: openshift-console
+      argoProject: resilient
+      chart: ensure-openshift-console-plugins
+      chartVersion: 0.1.*
+      extraValueFiles:
+        - '$patternref/variants/techdemo/values-console-plugins-spokes.yaml'
+
+    openshift-external-secrets:
+      name: openshift-external-secrets
+      namespace: external-secrets
+      argoProject: resilient
+      chart: openshift-external-secrets
+      chartVersion: 0.0.*
+
+    openshift-cnv:
+      name: openshift-cnv
+      namespace: openshift-cnv
+      argoProject: resilient
+      chart: openshift-virtualization-instance
+      chartVersion: 0.1.*
+
+    odf:
+      name: odf
+      namespace: openshift-storage
+      argoProject: resilient
+      chart: openshift-data-foundations
+      chartVersion: 0.3.*
+      extraValueFiles:
+        - '$patternref/overrides/values-odf-chart.yaml'
+
+    node-health-check-operator:
+      name: node-health-check-operator
+      namespace: openshift-workload-availability
+      argoProject: resilient
+      chart: node-health-check-operator
+      chartVersion: 0.1.*
+
+    external-dns-operator:
+      name: external-dns-operator
+      namespace: external-dns-operator
+      argoProject: resilient
+      chart: external-dns-operator
+      chartVersion: 0.1.*
+
+    adp-data-protection:
+      name: adp-data-protection-application
+      namespace: openshift-adp
+      argoProject: resilient
+      chart: data-protection-application
+      chartVersion: 0.0.*
+
+  managedClusterGroups: []
